@@ -75,31 +75,25 @@ class DiffusionScoreModel(nn.Module):
         """
         state: (B, S)
         action: (B, A)
-        time: (B, 1)
+        time: (B,) or (B,1)
         """
-        t_embed = self.time_embed(time)
-        cond = self.cond_encoder(state)
-        x = torch.cat([action, state, cond, t_embed], dim=-1)
+        if time.dim() == 1:
+            time = time.unsqueeze(-1)                # (B,) -> (B,1)
+        elif time.dim() == 0:
+            time = time.unsqueeze(0).unsqueeze(-1)   # () -> (1,1)
+
+        t_embed = self.time_embed(time)              # (B, time_dim)
+        if t_embed.dim() == 1:                       # (time_dim,)
+            t_embed = t_embed.unsqueeze(0)
+
+        # --- 条件编码 ---
+        cond = self.cond_encoder(state)              # (B,128)
+
+        # --- 拼接输入 ---
+        x = torch.cat([action, state, cond, t_embed], dim=-1)  # 全部二维 (B, D)
+
+        # --- 反向网络输出 score 场 ---
         return self.reverse_net(x)
-
-
-# -----------------------------
-# Q network (State-Action Value)
-# -----------------------------
-class QNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=256):
-        super().__init__()
-        self.q = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)
-        return self.q(x)
 
 
 # -----------------------------

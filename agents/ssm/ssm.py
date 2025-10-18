@@ -11,6 +11,7 @@ from agents.ssm.utils import (
     vp_beta_schedule,
     soft_update,
     safe_ddpm_sampler,
+    safe_langevin_sampler,
 )
 
 # ============================================================
@@ -78,6 +79,17 @@ class SSMAgent(Agent):
         self.safe_threshold = getattr(args, "safe_threshold", 0.0)     # Q_h <= 0 safe
         self.alpha_sm = getattr(args, "alpha_sm", 1.0)                 # safe gradient scaling
         self.beta_sm = getattr(args, "beta_sm", 1.5)                   # unsafe gradient scaling
+    
+    def train(self, training: bool = True):
+        """Toggle training/eval mode for all learnable components."""
+        self.training = training
+        self.critic_1.train(training)
+        self.critic_2.train(training)
+        self.target_critic_1.train(training)
+        self.target_critic_2.train(training)
+        self.safety_critic.train(training)
+        self.safety_target.train(training)
+        self.score_model.train(training)
 
     # ============================================================
     # critic update (reward + safety critic)
@@ -166,20 +178,20 @@ class SSMAgent(Agent):
     # ============================================================
     def sample_action(self, state):
         with torch.no_grad():
-            return safe_ddpm_sampler(
+            return safe_langevin_sampler(
                 model=self.score_model,
+                qh_model=self.safety_critic,
                 state=state,
                 T=self.T,
-                alphas=self.alphas,
-                alpha_hats=self.alpha_hats,
-                betas=self.betas,
-                safety_critic=self.safety_critic,
+                eta=1e-2,
+                sigma=self.ddpm_temperature,
                 safe_threshold=self.safe_threshold,
                 step_size=0.1,
-                temperature=self.ddpm_temperature,
-                action_dim=self.score_model.action_dim,
-                device=self.device,
+                schedule_eta=True,
+                schedule_sigma=True,
             )
+
+
     
     # ============================================================
     # action selection for environment interaction
@@ -198,6 +210,46 @@ class SSMAgent(Agent):
     # ============================================================
     # training update per iteration
     # ============================================================
+    def update_parameters(self, memory, updates):
+        """Compatibility wrapper matching the CAL training loop signature."""
+        (
+            state_batch,
+            action_batch,
+            reward_batch,
+            next_state_batch,
+            mask_batch,
+        ) = memory
+
+        state_batch = torch.FloatTensor(state_batch).to(self.device)
+        action_batch = torch.FloatTensor(action_batch).to(self.device)
+        reward_batch = torch.FloatTensor(reward_batch).to(self.device)
+        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+        mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+
+        reward = reward_batch[:, 0:1]
+        cost = reward_batch[:, 1:2]
+
+        critic_loss, safety_loss = self.update_critic(
+            state_batch,
+            action_batch,
+            reward,
+            cost,
+            next_state_batch,
+            mask_batch,
+        )
+        actor_loss = self.update_actor(state_batch, action_batch)
+
+        soft_update(self.target_critic_1, self.critic_1, self.tau)
+        soft_update(self.target_critic_2, self.critic_2, self.tau)
+        soft_update(self.safety_target, self.safety_critic, self.tau)
+
+        return {
+            "critic_loss": critic_loss,
+            "safety_loss": safety_loss,
+            "actor_loss": actor_loss,
+        }
+
+    
     def update(self, replay_buffer, logger=None, step=0):
         # sample from buffer: expect (s,a,r,c,s',done)
         state, action, reward, cost, next_state, done = replay_buffer.sample(self.args.batch_size)
