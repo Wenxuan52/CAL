@@ -1,6 +1,5 @@
 import gym
 import numpy as np
-import wandb
 
 class SafetygymEnvSampler():
     def __init__(self, args, env, max_path_length=400):

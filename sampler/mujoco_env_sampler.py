@@ -18,7 +18,13 @@ class MuJoCoEnvSampler():
     def sample(self, agent, i, eval_t=False):
         self.total_path_length += 1
         if self.current_state is None:
-            self.current_state = self.env.reset()
+            reset_result = self.env.reset()
+            if isinstance(reset_result, tuple):  # Gym >= 0.25
+                obs, info = reset_result
+                self.current_state = obs
+            else:  # 旧 Gym / Safety Gym
+                self.current_state = reset_result
+
             if self.args.env_name == 'Ant-v3':
                 self.current_state = self.current_state[:27]
             elif self.args.env_name == 'Humanoid-v3':
@@ -27,7 +33,13 @@ class MuJoCoEnvSampler():
 
         cur_state = self.current_state
         action = agent.select_action(cur_state, eval_t)
-        next_state, reward, terminal, info = self.env.step(action)
+        
+        step_result = self.env.step(action)
+        if len(step_result) == 5:
+            next_state, reward, terminated, truncated, info = step_result
+            terminal = terminated or truncated
+        else:
+            next_state, reward, terminal, info = step_result
 
         if 'y_velocity' in info:
             cost = np.sqrt(info["y_velocity"] ** 2 + info["x_velocity"] ** 2)

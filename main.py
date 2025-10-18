@@ -1,23 +1,32 @@
+from ast import Raise
 import time
 import gym
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
+import pandas as pd
 import os
-import wandb
+
 import socket
 from pathlib import Path
 import setproctitle
 
-from agent.replay_memory import ReplayMemory
-from agent.cal import CALAgent
+from agents.replay_memory import ReplayMemory
 from sampler.mujoco_env_sampler import MuJoCoEnvSampler
 from sampler.safetygym_env_sampler import SafetygymEnvSampler
 
+# Agents
+from agents.cal.cal import CALAgent
+from agents.qsm.qsm import QSMAgent
+from agents.ssm.ssm import SSMAgent
 
-def train(args, env_sampler, agent, pool):
+
+def train(args, env_sampler, agent, pool, writer=None):
     total_step = 0
     exploration_before_start(args, env_sampler, pool, agent)
     epoch = 0
+
+    history = []
 
     for _ in range(args.num_epoch):
         sta = time.time()
@@ -54,14 +63,30 @@ def train(args, env_sampler, agent, pool):
             if total_step % epo_len == 0 or total_step == 1:
                 test_reward, test_cost = evaluate(args.num_eval_epochs)
                 print('env: {}, exp: {}, step: {}, test_return: {}, test_cost: {}, budget: {}, seed: {}, cuda_num: {}, time: {}s'.format(args.env_name, args.experiment_name, total_step, np.around(test_reward, 2), np.around(test_cost, 2), args.cost_lim, args.seed, args.cuda_num, int(time.time() - sta)))
-                if args.use_wandb:
-                    wandb.log({"test_return": test_reward, 'total_step': total_step})
-                    wandb.log({"test_cost": test_cost, 'total_step': total_step})
+                if args.use_tensorboard and writer is not None:
+                    writer.add_scalar('Eval/return', test_reward, total_step)
+                    writer.add_scalar('Eval/cost', test_cost, total_step)
+                if args.save_history:
+                    history.append({
+                        "step": total_step,
+                        "return": float(test_reward),
+                        "cost": float(test_cost)
+                    })
+            
         epoch += 1
+
+    if args.save_history and len(history) > 0:
+        import datetime
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        save_dir = Path.cwd() / "results" / args.env_name / args.experiment_name / f"{date_str}_seed{args.seed}"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / "history.csv"
+        pd.DataFrame(history).to_csv(save_path, index=False)
+        print(f"[History] Saved training history to {save_path}")
     
     # save network parameters after training
     if args.save_parameters:
-        agent.save_model()
+        agent.save_model(save_dir)
 
 
 def exploration_before_start(args, env_sampler, pool, agent):
@@ -87,14 +112,24 @@ def train_policy_repeats(args, total_step, train_step, pool, agent):
 
 def main(args):
     torch.set_num_threads(args.n_training_threads)
-    run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                       0] + "/results") / args.env_name / args.experiment_name
+    run_dir = Path.cwd() / "results" / args.env_name / args.experiment_name
 
     env = gym.make(args.env_name)
     # Set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    env.seed(args.seed)
+
+    if args.safetygym:
+        env.seed(args.seed)
+    elif not args.safetygym and hasattr(env, 'reset'):
+        env.reset(seed=args.seed)
+        if hasattr(env.action_space, 'seed'):
+            env.action_space.seed(args.seed)
+    else:
+        Raise("Unknown env type")
+        
+
+    # env.seed(args.seed)
 
     s_dim = env.observation_space.shape[0]
     
@@ -106,21 +141,32 @@ def main(args):
     if not run_dir.exists():
         os.makedirs(str(run_dir))
 
-    if args.use_wandb:
-        run = wandb.init(config=args,
-                         project='SafeRL',
-                         entity=args.user_name,
-                         notes=socket.gethostname(),
-                         name= args.experiment_name + '_' + str(args.cuda_num) +'_' + str(args.seed),
-                         group=args.env_name,
-                         dir=str(run_dir),
-                         job_type="training",
-                         reinit=True)
+    if args.use_tensorboard:
+        import datetime
+        time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        run_name = f"{time_str}_seed{args.seed}"
+
+        log_dir = (
+            Path("/root/tf-logs")
+            / args.env_name
+            / args.experiment_name
+            / run_name
+        )
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        writer = SummaryWriter(log_dir=str(log_dir))
 
     setproctitle.setproctitle(str(args.env_name) + "-" + str(args.seed))
 
-    # Intial agent
-    agent = CALAgent(s_dim, env.action_space, args)
+    # Initialize agent based on args.agent
+    if args.agent.lower() == 'cal':
+        agent = CALAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'qsm':
+        agent = QSMAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'ssm':
+        agent = SSMAgent(s_dim, env.action_space, args)
+    else:
+        raise ValueError(f"Unknown agent type: {args.agent}")
 
     # Initial pool for env
     pool = ReplayMemory(args.replay_size)
@@ -131,10 +177,10 @@ def main(args):
     else:
         env_sampler = MuJoCoEnvSampler(args, env)
 
-    train(args, env_sampler, agent, pool)
+    train(args, env_sampler, agent, pool, writer=None)
 
-    if args.use_wandb:
-        run.finish()
+    if args.use_tensorboard:
+        writer.close()
 
 
 if __name__ == '__main__':

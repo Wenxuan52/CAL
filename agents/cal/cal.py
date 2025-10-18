@@ -3,9 +3,11 @@ import torch
 import torch.nn.functional as F
 import os
 
-from agent import Agent
-from agent.utils import soft_update
-from agent.model import QNetwork, GaussianPolicy, QcEnsemble
+from pathlib import Path
+
+from agents.base_agent import Agent
+from agents.cal.utils import soft_update
+from agents.cal.model import QNetwork, GaussianPolicy, QcEnsemble
 
 
 class CALAgent(Agent):
@@ -198,20 +200,18 @@ class CALAgent(Agent):
             soft_update(self.safety_critic_targets, self.safety_critics, self.critic_tau)
 
     # Save model parameters
-    def save_model(self, suffix="", actor_path=None, critics_path=None, safetycritics_path=None):
-        if not os.path.exists('models/'):
-            os.makedirs('models/')
+    def save_model(self, save_dir, suffix=""):
 
-        if actor_path is None:
-            actor_path = "models/actor_{}_{}".format(self.args.env_name, suffix)
-        if critics_path is None:
-            critics_path = "models/critics_{}_{}".format(self.args.env_name, suffix)
-        if safetycritics_path is None:
-            safetycritics_path = "models/safetycritics_{}_{}".format(self.args.env_name, suffix)
-        print('Saving models to {}, {}, and {}'.format(actor_path, critics_path, safetycritics_path))
+        actor_path = save_dir / f"actor_{suffix}.pth"
+        critics_path = save_dir / f"critics_{suffix}.pth"
+        safetycritics_path = save_dir / f"safetycritics_{suffix}.pth"
+
+        print(f"[Model] Saving models to:\n  {actor_path}\n  {critics_path}\n  {safetycritics_path}")
+
         torch.save(self.policy.state_dict(), actor_path)
         torch.save(self.critic.state_dict(), critics_path)
         torch.save(self.safety_critics.state_dict(), safetycritics_path)
+
 
     # Load model parameters
     def load_model(self, actor_path, critics_path, safetycritics_path):
