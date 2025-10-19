@@ -62,7 +62,7 @@ def readParser():
     # ============================================================
     # QSM / SSM Specific Config
     # ============================================================
-    parser.add_argument('--T', type=int, default=20,
+    parser.add_argument('--T', type=int, default=50,
                         help='Number of diffusion timesteps (for DDPM)')
     parser.add_argument('--M_q', type=float, default=1.0,
                         help='Scaling factor for Q-score matching')
@@ -79,7 +79,7 @@ def readParser():
     # ============================================================
     parser.add_argument('--ensemble_size', type=int, default=4,
                         help='Number of ensemble networks for safety critic Q_h')
-    parser.add_argument('--safe_threshold', type=float, default=0.0,
+    parser.add_argument('--safe_threshold', type=float, default=10.0,
                         help='Threshold applied on V_h(s); V_h(s) <= threshold is safe')
     parser.add_argument('--alpha_sm', type=float, default=1.0,
                         help='Scaling for score guidance (safe & unsafe share this value)')

@@ -10,8 +10,7 @@ from agents.ssm.utils import (
     cosine_beta_schedule,
     vp_beta_schedule,
     soft_update,
-    safe_ddpm_sampler,
-    safe_langevin_sampler,
+    safe_ddpm_sampler
 )
 
 # ============================================================
