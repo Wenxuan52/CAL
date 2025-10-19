@@ -176,8 +176,11 @@ def main(args):
         env_sampler = SafetygymEnvSampler(args, env)
     else:
         env_sampler = MuJoCoEnvSampler(args, env)
-
-    train(args, env_sampler, agent, pool, writer=None)
+    
+    if args.use_tensorboard:
+        train(args, env_sampler, agent, pool, writer=writer)
+    else:
+        train(args, env_sampler, agent, pool, writer=None)
 
     if args.use_tensorboard:
         writer.close()

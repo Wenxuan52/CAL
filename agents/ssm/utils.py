@@ -111,13 +111,13 @@ def safe_ddpm_sampler(
     safe_threshold=0.0,
     step_size=0.1,
     temperature=1.0,
+    eta=1.0,
     action_dim=None,
     device="cuda",
 ):
     """
-    Safe-aware DDPM sampler:
-    if the generated action is unsafe (Q_h > safe_threshold),
-    project it back toward safe manifold using -∇_a Q_h.
+    DDIM/DDPM-compatible safe diffusion sampler.
+    Adds safety correction via Hamilton–Jacobi gradient projection.
     """
     B = state.size(0)
     x = torch.randn(B, action_dim, device=device)
@@ -135,20 +135,24 @@ def safe_ddpm_sampler(
             beta = betas[t]
 
             noise = torch.randn_like(x) if t > 0 else torch.zeros_like(x)
+            if t > 0:
+                sigma_t = temperature * eta * torch.sqrt(
+                    (1 - alpha_hats[t - 1]) / (1 - alpha_hat) * beta
+                )
+            else:
+                sigma_t = 0.0
+
             x = (1 / torch.sqrt(alpha)) * (
                 x - (1 - alpha) / torch.sqrt(1 - alpha_hat) * eps_theta
-            ) + torch.sqrt(beta) * noise * temperature
+            ) + sigma_t * noise
 
         # -------------------------------------------------
         # Safety correction (with grad)
         # -------------------------------------------------
         if safety_critic is not None:
-            # Make sure gradients are enabled even if the caller wrapped us in
-            # a no_grad() context (e.g. agent.sample_action()).
+            # Force autograd even under no_grad context
             with torch.enable_grad():
-                # clone and enable grad for new autograd graph
                 x = x.detach().clone().requires_grad_(True)
-
                 qh = safety_critic(state_for_grad, x).mean(0)
                 unsafe_mask = (qh > safe_threshold).float()
 
@@ -156,126 +160,11 @@ def safe_ddpm_sampler(
                     dq_da = torch.autograd.grad(
                         qh.sum(), x, create_graph=False, retain_graph=False
                     )[0]
-
-                    # Project unsafe actions back
+                    # Project unsafe actions back toward safe region
                     x = (x - step_size * dq_da * unsafe_mask).detach()
                     x = torch.clamp(x, -1.0, 1.0)
                 else:
                     x = x.detach()
-
-    return torch.tanh(x)
-
-
-import torch
-
-def _collapse_to_batch_scalar(qh: torch.Tensor, batch_size: int) -> torch.Tensor:
-    """
-    将 critic 输出 qh 折叠为形状 [B, 1] 的张量，自动识别 batch 维。
-    兼容形状：
-      - [B, 1] / [B] -> [B, 1]
-      - [E, B, 1] -> [B, 1]   (例如 QcEnsemble 输出)
-      - [B, A] -> [B, 1]
-      - [B, A, E] -> [B, 1]
-      - [E, B] -> [B, 1]
-    """
-    if qh.dim() == 0:
-        return qh.view(1, 1).expand(batch_size, 1)
-
-    # 找出等于 batch_size 的维度作为 batch 维
-    cand = [i for i in range(qh.dim()) if qh.size(i) == batch_size]
-    if len(cand) == 0:
-        # 没找到 batch 维，说明输出与输入无关，直接求均值广播
-        v = qh.mean()
-        return v.view(1, 1).expand(batch_size, 1)
-
-    bdim = cand[0]
-    # 把 batch 维换到第 0 维
-    perm = [bdim] + [i for i in range(qh.dim()) if i != bdim]
-    q = qh.permute(*perm)  # [B, ...]
-
-    # 折叠剩余维度
-    while q.dim() > 2:
-        q = q.mean(dim=-1)
-    if q.size(1) != 1:
-        q = q.mean(dim=1, keepdim=True)
-    return q  # [B, 1]
-
-
-def safe_langevin_sampler(
-    model,
-    qh_model,
-    state,
-    T: int = 20,
-    eta: float = 1e-2,
-    sigma: float = 1e-3,
-    safe_threshold: float = 0.0,
-    step_size: float = 0.1,
-    schedule_eta: bool = True,
-    schedule_sigma: bool = True,
-):
-    """
-    Langevin 动力学采样器（带 Hamilton–Jacobi 安全修正）
-    - model: diffusion score 模型
-    - qh_model: 安全 critic（Q_h）
-    - state: 当前状态 [B, S]
-    """
-    device = state.device
-    B = state.size(0)
-    x = torch.randn(B, model.action_dim, device=device)
-
-    for t in reversed(range(T)):
-        # 时间步
-        t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
-        eta_t = eta * (1 - t / T) if schedule_eta else eta
-        sigma_t = sigma * (t / T) if schedule_sigma else sigma
-
-        # --- 保证 state 与 x 的 batch 对齐 ---
-        if state.size(0) != x.size(0):
-            if state.size(0) == 1:
-                # 单状态扩展成整个 batch
-                state = state.expand(x.size(0), -1)
-            else:
-                raise RuntimeError(
-                    f"[safe_langevin_sampler] state batch {state.size(0)} != x batch {x.size(0)}"
-                )
-
-        # --- Langevin 主更新 ---
-        x = x.detach().requires_grad_(True)
-        s_theta = model(state, x, t_tensor)
-        noise = torch.randn_like(x) if t > 0 else 0.0
-        x = x + eta_t * s_theta + sigma_t * noise
-
-        # --- 安全修正阶段 ---
-        with torch.enable_grad():
-            x.requires_grad_(True)
-
-            # 前向传播安全 critic
-            qh_raw = qh_model(state, x)
-
-            # 自动识别 batch 维并折叠到 [B, 1]
-            qh = _collapse_to_batch_scalar(qh_raw, x.size(0))
-
-            # 构造安全掩码并广播到动作维
-            unsafe_mask = (qh > safe_threshold).float().expand(-1, x.size(1))
-
-            # 计算 ∇_a Q_h(s,a)
-            dq_da_h = torch.autograd.grad(
-                qh.sum(),
-                x,
-                retain_graph=False,
-                create_graph=False,
-                allow_unused=True,
-            )[0]
-
-            # 若 critic 不依赖动作，梯度为 None，则设为 0
-            if dq_da_h is None:
-                dq_da_h = torch.zeros_like(x)
-
-            # 安全修正更新
-            x = x - step_size * dq_da_h * unsafe_mask
-
-        # 断开计算图以节省显存
-        x = x.detach()
 
     return torch.tanh(x)
 

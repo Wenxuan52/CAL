@@ -178,18 +178,21 @@ class SSMAgent(Agent):
     # ============================================================
     def sample_action(self, state):
         with torch.no_grad():
-            return safe_langevin_sampler(
+            return safe_ddpm_sampler(
                 model=self.score_model,
-                qh_model=self.safety_critic,
                 state=state,
                 T=self.T,
-                eta=1e-2,
-                sigma=self.ddpm_temperature,
+                alphas=self.alphas,
+                alpha_hats=self.alpha_hats,
+                betas=self.betas,
+                safety_critic=self.safety_critic,
                 safe_threshold=self.safe_threshold,
                 step_size=0.1,
-                schedule_eta=True,
-                schedule_sigma=True,
+                temperature=self.ddpm_temperature,
+                action_dim=self.score_model.action_dim,
+                device=self.device,
             )
+
 
 
     

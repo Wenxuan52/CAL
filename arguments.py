@@ -79,13 +79,11 @@ def readParser():
     # ============================================================
     parser.add_argument('--ensemble_size', type=int, default=4,
                         help='Number of ensemble networks for safety critic Q_h')
-    parser.add_argument('--safe_threshold', type=float, default=0.0,
+    parser.add_argument('--safe_threshold', type=float, default=10.0,
                         help='Safe set threshold: Q_h(s,a) <= threshold is safe')
     parser.add_argument('--alpha_sm', type=float, default=1.0,
                         help='Scaling for gradient inside safe region')
     parser.add_argument('--beta_sm', type=float, default=1.5,
                         help='Scaling for gradient outside safe region')
-
-    return parser.parse_args()
 
     return parser.parse_args()
