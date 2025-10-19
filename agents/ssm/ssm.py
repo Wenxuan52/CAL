@@ -118,11 +118,15 @@ class SSMAgent(Agent):
         candidate_actions = candidate_actions.view(self.qh_min_samples, B, action_dim)
         action = candidate_actions[min_idx, torch.arange(B, device=device)].detach()
 
-        # gradient refinement
+        # gradient refinement (ensure grads even if caller is in no_grad context)
+        state_for_grad = state.detach()
         for _ in range(self.qh_min_steps):
-            action = action.detach().requires_grad_(True)
-            q_current = critic(state, action).mean(0)
-            grad = torch.autograd.grad(q_current.sum(), action, create_graph=False)[0]
+            with torch.enable_grad():
+                action = action.detach().requires_grad_(True)
+                q_current = critic(state_for_grad, action).mean(0)
+                grad = torch.autograd.grad(
+                    q_current.sum(), action, create_graph=False, allow_unused=False
+                )[0]
             action = (action - self.qh_min_step_size * grad).clamp(-1.0, 1.0).detach()
 
         with torch.no_grad():
