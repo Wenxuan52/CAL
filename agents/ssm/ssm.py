@@ -22,6 +22,7 @@ class SSMAgent(Agent):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.args = args
+        self.action_dim = action_space.shape[0]
 
         # ---------- basic hyperparameters ----------
         self.discount = args.gamma
@@ -34,17 +35,17 @@ class SSMAgent(Agent):
         self.beta_schedule = args.beta_schedule
 
         # ---------- main critics ----------
-        self.critic_1 = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-        self.critic_2 = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-        self.target_critic_1 = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-        self.target_critic_2 = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
+        self.critic_1 = QNetwork(num_inputs, self.action_dim, args.hidden_size).to(self.device)
+        self.critic_2 = QNetwork(num_inputs, self.action_dim, args.hidden_size).to(self.device)
+        self.target_critic_1 = QNetwork(num_inputs, self.action_dim, args.hidden_size).to(self.device)
+        self.target_critic_2 = QNetwork(num_inputs, self.action_dim, args.hidden_size).to(self.device)
         self.target_critic_1.load_state_dict(self.critic_1.state_dict())
         self.target_critic_2.load_state_dict(self.critic_2.state_dict())
 
         # ---------- diffusion score model ----------
         self.score_model = DiffusionScoreModel(
             state_dim=num_inputs,
-            action_dim=action_space.shape[0],
+            action_dim=self.action_dim,
             hidden_dim=args.hidden_size,
             time_dim=args.time_dim,
         ).to(self.device)
@@ -69,16 +70,19 @@ class SSMAgent(Agent):
         # Safety-related components (new for SSM)
         # ============================================================
         # Q_h(s,a) ensemble critic to approximate constraint value
-        self.safety_critic = QcEnsemble(num_inputs, action_space.shape[0], args.ensemble_size, hidden_size=args.hidden_size).to(self.device)
-        self.safety_target = QcEnsemble(num_inputs, action_space.shape[0], args.ensemble_size, hidden_size=args.hidden_size).to(self.device)
+        self.safety_critic = QcEnsemble(num_inputs, self.action_dim, args.ensemble_size, hidden_size=args.hidden_size).to(self.device)
+        self.safety_target = QcEnsemble(num_inputs, self.action_dim, args.ensemble_size, hidden_size=args.hidden_size).to(self.device)
         self.safety_target.load_state_dict(self.safety_critic.state_dict())
         self.safety_optim = torch.optim.Adam(self.safety_critic.parameters(), lr=args.qc_lr)
 
         # safety control parameters
-        self.safety_discount = getattr(args, "safety_gamma", 0.99)     # γ_h
-        self.safe_threshold = getattr(args, "safe_threshold", 0.0)     # Q_h <= 0 safe
-        self.alpha_sm = getattr(args, "alpha_sm", 1.0)                 # safe gradient scaling
-        self.beta_sm = getattr(args, "beta_sm", 1.5)                   # unsafe gradient scaling
+        self.safe_threshold = getattr(args, "safe_threshold", 0.0)     # V_h <= threshold safe
+        self.alpha_sm = getattr(args, "alpha_sm", 1.0)                 # shared scaling
+
+        # Q_h minimization hyperparameters (HJ recursion)
+        self.qh_min_samples = getattr(args, "qh_min_samples", 8)
+        self.qh_min_steps = getattr(args, "qh_min_steps", 5)
+        self.qh_min_step_size = getattr(args, "qh_min_step_size", 0.1)
     
     def train(self, training: bool = True):
         """Toggle training/eval mode for all learnable components."""
@@ -90,6 +94,51 @@ class SSMAgent(Agent):
         self.safety_critic.train(training)
         self.safety_target.train(training)
         self.score_model.train(training)
+
+    # ============================================================
+    # Hamilton–Jacobi helper utilities
+    # ============================================================
+    def min_qh_over_actions(self, state, critic):
+        """Approximate min_a Q_h(s,a) via gradient-based search."""
+        B = state.size(0)
+        device = state.device
+        action_dim = self.action_dim
+
+        # multi-start initialization
+        state_expanded = state.unsqueeze(0).expand(self.qh_min_samples, -1, -1)
+        state_expanded = state_expanded.reshape(-1, state.size(-1))
+        candidate_actions = torch.rand(
+            self.qh_min_samples * B, action_dim, device=device
+        ) * 2 - 1
+
+        with torch.no_grad():
+            q_vals = critic(state_expanded, candidate_actions).mean(0)
+        q_vals = q_vals.view(self.qh_min_samples, B, 1)
+        min_idx = q_vals.argmin(dim=0).squeeze(-1)
+        candidate_actions = candidate_actions.view(self.qh_min_samples, B, action_dim)
+        action = candidate_actions[min_idx, torch.arange(B, device=device)].detach()
+
+        # gradient refinement
+        for _ in range(self.qh_min_steps):
+            action = action.detach().requires_grad_(True)
+            q_current = critic(state, action).mean(0)
+            grad = torch.autograd.grad(q_current.sum(), action, create_graph=False)[0]
+            action = (action - self.qh_min_step_size * grad).clamp(-1.0, 1.0).detach()
+
+        with torch.no_grad():
+            q_min = critic(state, action).mean(0)
+        return q_min, action
+
+    def compute_vh(self, state, cost=None, use_target=False):
+        """Evaluate V_h(s) = max(h(s), min_a Q_h(s,a))."""
+        critic = self.safety_target if use_target else self.safety_critic
+        min_qh, _ = self.min_qh_over_actions(state, critic)
+        if cost is None:
+            h_val = torch.zeros_like(min_qh)
+        else:
+            h_val = (-cost).detach()
+        vh = torch.maximum(h_val, min_qh.detach()).detach()
+        return vh
 
     # ============================================================
     # critic update (reward + safety critic)
@@ -114,10 +163,9 @@ class SSMAgent(Agent):
         self.critic_optim_2.step()
 
         # ---------- safety critic (Q_h) ----------
-        with torch.no_grad():
-            next_action = self.sample_action(next_state)
-            qh_next = self.safety_target(next_state, next_action).mean(0)  # ensemble mean
-            target_qh = cost + mask * self.safety_discount * qh_next
+        vh_next = self.compute_vh(next_state, cost, use_target=True)
+        h_next = (-cost).detach()
+        target_qh = torch.where(mask > 0, vh_next, h_next)
 
         qh = self.safety_critic(state, action).mean(0)
         safety_loss = F.mse_loss(qh, target_qh)
@@ -131,7 +179,7 @@ class SSMAgent(Agent):
     # ============================================================
     # actor update (core of SSM)
     # ============================================================
-    def update_actor(self, state, action):
+    def update_actor(self, state, action, cost=None):
         B = state.size(0)
         device = self.device
 
@@ -154,12 +202,13 @@ class SSMAgent(Agent):
         qh = self.safety_critic(state, noisy_action).mean(0)
         dq_da_h = torch.autograd.grad(qh.sum(), noisy_action, create_graph=True)[0].detach()  # ∇a Q_h field
 
-        # ---------- region masks ----------
-        safe_mask = (qh <= self.safe_threshold).float()   # inside safe set
+        # ---------- region masks via V_h ----------
+        vh_state = self.compute_vh(state, cost)
+        safe_mask = (vh_state <= self.safe_threshold).float()
         unsafe_mask = 1.0 - safe_mask
 
         # ---------- target score field ----------
-        target_field = self.alpha_sm * dq_da * safe_mask + (-self.beta_sm) * dq_da_h * unsafe_mask
+        target_field = self.alpha_sm * (dq_da * safe_mask - dq_da_h * unsafe_mask)
 
         # ---------- DDPM score prediction ----------
         eps_pred = self.score_model(state, noisy_action, t.unsqueeze(1))
@@ -177,6 +226,7 @@ class SSMAgent(Agent):
     # sample action using learned diffusion model
     # ============================================================
     def sample_action(self, state):
+        vh_values = self.compute_vh(state, cost=None)
         with torch.no_grad():
             return safe_ddpm_sampler(
                 model=self.score_model,
@@ -191,6 +241,7 @@ class SSMAgent(Agent):
                 temperature=self.ddpm_temperature,
                 action_dim=self.score_model.action_dim,
                 device=self.device,
+                vh_values=vh_values,
             )
 
 
@@ -240,7 +291,7 @@ class SSMAgent(Agent):
             next_state_batch,
             mask_batch,
         )
-        actor_loss = self.update_actor(state_batch, action_batch)
+        actor_loss = self.update_actor(state_batch, action_batch, cost)
 
         soft_update(self.target_critic_1, self.critic_1, self.tau)
         soft_update(self.target_critic_2, self.critic_2, self.tau)
@@ -264,7 +315,7 @@ class SSMAgent(Agent):
         mask = 1 - torch.FloatTensor(done).unsqueeze(1).to(self.device)
 
         critic_loss, safety_loss = self.update_critic(state, action, reward, cost, next_state, mask)
-        actor_loss = self.update_actor(state, action)
+        actor_loss = self.update_actor(state, action, cost)
 
         # target updates
         soft_update(self.target_critic_1, self.critic_1, self.tau)
