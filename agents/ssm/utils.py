@@ -114,6 +114,7 @@ def safe_ddpm_sampler(
     eta=1.0,
     action_dim=None,
     device="cuda",
+    vh_values=None,
 ):
     """
     DDIM/DDPM-compatible safe diffusion sampler.
@@ -122,6 +123,11 @@ def safe_ddpm_sampler(
     B = state.size(0)
     x = torch.randn(B, action_dim, device=device)
     state_for_grad = state.detach()
+
+    if vh_values is not None:
+        unsafe_mask_state = (vh_values > safe_threshold).float()
+    else:
+        unsafe_mask_state = None
 
     for t in reversed(range(T)):
         # -------------------------------------------------
@@ -154,7 +160,10 @@ def safe_ddpm_sampler(
             with torch.enable_grad():
                 x = x.detach().clone().requires_grad_(True)
                 qh = safety_critic(state_for_grad, x).mean(0)
-                unsafe_mask = (qh > safe_threshold).float()
+                if unsafe_mask_state is not None:
+                    unsafe_mask = unsafe_mask_state
+                else:
+                    unsafe_mask = (qh > safe_threshold).float()
 
                 if unsafe_mask.sum() > 0:
                     dq_da = torch.autograd.grad(
