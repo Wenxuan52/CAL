@@ -129,6 +129,8 @@ def safe_ddpm_sampler(
     else:
         unsafe_mask_state = None
 
+    margin = 0.02
+
     for t in reversed(range(T)):
         # -------------------------------------------------
         # Reverse diffusion (no grad)
@@ -156,21 +158,25 @@ def safe_ddpm_sampler(
         # Safety correction (with grad)
         # -------------------------------------------------
         if safety_critic is not None:
-            # Force autograd even under no_grad context
             with torch.enable_grad():
                 x = x.detach().clone().requires_grad_(True)
-                qh = safety_critic(state_for_grad, x).mean(0)
+                qh_all = safety_critic(state_for_grad, x)
+                qh_mean = qh_all.mean(0)
+                qh_std = qh_all.std(0, unbiased=False)
+                qh = qh_mean + 0.5 * qh_std
                 if unsafe_mask_state is not None:
                     unsafe_mask = unsafe_mask_state
                 else:
-                    unsafe_mask = (qh > safe_threshold).float()
+                    unsafe_mask = (qh > (safe_threshold + margin)).float()
 
                 if unsafe_mask.sum() > 0:
                     dq_da = torch.autograd.grad(
                         qh.sum(), x, create_graph=False, retain_graph=False
                     )[0]
-                    # Project unsafe actions back toward safe region
-                    x = (x - step_size * dq_da * unsafe_mask).detach()
+                    dq_da = dq_da / (dq_da.norm(dim=1, keepdim=True) + 1e-8)
+                    decay = 0.5 + 0.5 * (t / max(T - 1, 1))
+                    step = step_size * decay
+                    x = (x - step * dq_da * unsafe_mask).detach()
                     x = torch.clamp(x, -1.0, 1.0)
                 else:
                     x = x.detach()
