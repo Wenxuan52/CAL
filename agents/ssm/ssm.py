@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 from torch.nn.utils import clip_grad_norm_
 
 from agents.base_agent import Agent
@@ -144,68 +143,33 @@ class SSMAgent(Agent):
         return q_min, action
 
     def _aggregate_qh(self, qh_all):
-        qh_mean = qh_all.mean(0)
-        qh_std = qh_all.std(0, unbiased=False)
-        return qh_mean + 0.5 * qh_std
+        """Aggregate ensemble Q_h outputs for training targets."""
+        return qh_all.mean(0)
 
     @torch.no_grad()
-    def _sample_actions_for_expectation(self, state, M):
-        """Approximate sampling of M actions per state using diffusion actor."""
-        B, A = state.size(0), self.action_dim
-        if self.T <= 0:
-            return torch.tanh(torch.randn(B * M, A, device=self.device))
-        t_index = max(min(int(self.T * 0.5), self.T - 1), 0)
-        t_mid = torch.full((B * M, 1), t_index, device=self.device, dtype=torch.float32)
-        noise = torch.randn(B * M, A, device=self.device)
-        alpha_hat = self.alpha_hats[t_mid.long().squeeze(-1)].unsqueeze(1)
-        a_t = noise
-        eps = self.score_model(state.repeat_interleave(M, 0), a_t, t_mid)
-        alpha_t = self.alphas[t_mid.long().squeeze(-1)].unsqueeze(1)
-        coef1 = 1.0 / torch.sqrt(alpha_t)
-        coef2 = (1 - alpha_t) / torch.sqrt(1 - alpha_hat)
-        a_tm1 = coef1 * (a_t - coef2 * eps)
-        return torch.tanh(a_tm1)
-
-    def _qh_softmin(self, q_vals, tau):
-        z = -(q_vals / tau)
-        m = z.max(dim=1, keepdim=True)[0]
-        softmin = -tau * (m.squeeze(1) + torch.log(torch.exp(z - m).sum(dim=1)))
-        return softmin
-
-    @torch.no_grad()
-    def compute_vh_expected(self, state, cost=None, use_target=False, mode="softmin"):
+    def compute_vh_expected(self, state, cost=None, use_target=False):
         critic = self.safety_target if use_target else self.safety_critic
-        B = state.size(0)
-        M = int(max(self.vh_expect_M, 1))
 
-        actions = self._sample_actions_for_expectation(state, M)
-        expanded_state = state.repeat_interleave(M, 0)
-        qh_all = critic(expanded_state, actions)
-        qh_vals = self._aggregate_qh(qh_all).view(B, M, -1)
-
-        if mode == "expect":
-            qh_red = qh_vals.mean(dim=1)
-        else:
-            qh_red = self._qh_softmin(qh_vals, self.vh_softmin_tau)
+        q_min, _ = self.min_qh_over_actions(state, critic)
 
         if cost is None:
-            h_val = torch.zeros_like(qh_red)
+            h_curr = torch.zeros_like(q_min)
         else:
-            h_val = (-cost).detach()
-        vh = torch.maximum(h_val, qh_red)
+            h_curr = cost.detach()
+
+        vh = torch.maximum(h_curr, q_min)
         return vh
 
     def compute_vh(self, state, cost=None, use_target=False):
-        return self.compute_vh_expected(state, cost=cost, use_target=use_target, mode="softmin")
-
-    def _softmax_pair(self, a, b, tau=0.5):
-        return torch.maximum(a, b) + (tau * F.softplus(-(a - b) / tau))
+        return self.compute_vh_expected(state, cost=cost, use_target=use_target)
 
     def _vh_bootstrap_target(self, next_state, cost, mask):
-        vh_next = self.compute_vh_expected(next_state, cost, use_target=True, mode="softmin")
-        h_next = (-cost).detach()
-        vh_td = torch.where(mask > 0, vh_next, h_next)
-        return self._softmax_pair(h_next, vh_td, tau=0.5)
+        with torch.no_grad():
+            vh_next = self.compute_vh_expected(next_state, cost=None, use_target=True)
+        h_curr = cost.detach()
+        td = torch.maximum(h_curr, self.discount * vh_next)
+        target = torch.where(mask > 0, td, h_curr)
+        return target
 
     def _smooth_mask(self, vh, threshold, temp):
         return torch.sigmoid(-(vh - threshold) * temp)
@@ -271,7 +235,7 @@ class SSMAgent(Agent):
         qh = self._aggregate_qh(qh_all)
         dq_da_h = torch.autograd.grad(qh.sum(), noisy_action, create_graph=True)[0].detach()
 
-        vh_state = self.compute_vh_expected(state, cost, mode="softmin")
+        vh_state = self.compute_vh_expected(state, cost)
 
         with torch.no_grad():
             if self.vh_ema_buf is None or self.vh_ema_buf.shape != vh_state.shape:
@@ -324,7 +288,7 @@ class SSMAgent(Agent):
     # sample action using learned diffusion model
     # ============================================================
     def sample_action(self, state):
-        vh_values = self.compute_vh_expected(state, cost=None, mode="softmin")
+        vh_values = self.compute_vh_expected(state, cost=None)
         with torch.no_grad():
             return safe_ddpm_sampler(
                 model=self.score_model,
