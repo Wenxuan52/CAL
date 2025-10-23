@@ -31,8 +31,11 @@ class SSMAgent(Agent):
         self.guidance_alpha = args.alpha_sm
         self.guidance_beta = args.beta_sm if hasattr(args, "beta_sm") else 3.0
         self.guidance_step = 0.05
-        self.noise_scale = 1e-2
+        self.noise_scale = getattr(args, "ddpm_temperature", 1.0)
         self.safe_threshold = getattr(args, "safe_threshold", 0.0)
+        self.target_sampling_steps = getattr(args, "target_ddpm_steps", max(1, args.T // 2))
+        self.score_weight = getattr(args, "M_q", 1.0)
+        self.vh_samples = getattr(args, "vh_samples", 4)
 
         # Critics
         self.critic = QNetwork(num_inputs, self.action_dim, args.hidden_size).to(self.device)
@@ -78,6 +81,7 @@ class SSMAgent(Agent):
             step_size=self.guidance_step,
             noise_scale=self.noise_scale if not eval else 0.0,
             safe_threshold=self.safe_threshold,
+            guidance=True,
         )
         action = torch.clamp(action, -1.0, 1.0)
         action = action * self.action_scale + self.action_bias
@@ -111,6 +115,8 @@ class SSMAgent(Agent):
                 step_size=self.guidance_step,
                 noise_scale=self.noise_scale,
                 safe_threshold=self.safe_threshold,
+                guidance=False,
+                num_steps=self.target_sampling_steps,
             )
             next_action = torch.clamp(next_action, -1.0, 1.0)
             target_q1, target_q2 = self.critic_target(next_state_batch, next_action)
@@ -123,30 +129,39 @@ class SSMAgent(Agent):
 
         # Safety critic update
         current_qh1, current_qh2 = self.safety_critic(state_batch, action_batch)
-        current_vh = torch.min(current_qh1, current_qh2)
         with torch.no_grad():
-            next_action_h = safe_ddpm_sample(
-                self.policy_target,
-                self.critic_target,
-                self.safety_critic_target,
+            next_vh = self._estimate_vh(
                 next_state_batch,
-                alpha=self.guidance_alpha,
-                beta=self.guidance_beta,
-                step_size=self.guidance_step,
-                noise_scale=self.noise_scale,
-                safe_threshold=self.safe_threshold,
+                policy=self.policy_target,
+                critic=self.safety_critic_target,
+                critic_for_guidance=self.critic_target,
             )
-            next_action_h = torch.clamp(next_action_h, -1.0, 1.0)
-            next_qh1, next_qh2 = self.safety_critic_target(next_state_batch, next_action_h)
-            next_vh = torch.min(next_qh1, next_qh2)
-            target_vh = torch.maximum(cost_batch, mask_batch * self.safety_discount * next_vh)
-        safety_loss = F.mse_loss(current_vh, target_vh)
+            target_qh = (1 - self.safety_discount) * cost_batch \
+             + self.safety_discount * torch.maximum(cost_batch, next_vh)
+        safety_loss = F.mse_loss(current_qh1, target_qh) + F.mse_loss(current_qh2, target_qh)
         self.safety_critic_optimizer.zero_grad()
         safety_loss.backward()
         self.safety_critic_optimizer.step()
 
         # Diffusion policy update
-        policy_loss = self.policy.loss(state_batch, action_batch)
+        with torch.no_grad():
+            vh_state = self._estimate_vh(
+                state_batch,
+                policy=self.policy,
+                critic=self.safety_critic,
+                critic_for_guidance=self.critic,
+            ).squeeze(-1)
+        policy_loss = self.policy.loss(
+            state_batch,
+            action_batch,
+            self.critic,
+            self.safety_critic,
+            alpha=self.guidance_alpha,
+            beta=self.guidance_beta,
+            safe_threshold=self.safe_threshold,
+            m_q=self.score_weight,
+            vh_state=vh_state,
+        )
         self.policy_optimizer.zero_grad()
         policy_loss.backward()
         self.policy_optimizer.step()
@@ -155,6 +170,42 @@ class SSMAgent(Agent):
             soft_update(self.critic_target, self.critic, self.tau)
             soft_update(self.safety_critic_target, self.safety_critic, self.tau)
             soft_update(self.policy_target, self.policy, self.tau)
+
+    def _estimate_vh(
+        self,
+        state_batch: torch.Tensor,
+        policy,
+        critic,
+        critic_for_guidance,
+    ) -> torch.Tensor:
+        num_samples = max(1, self.vh_samples)
+        if num_samples == 1:
+            expanded_states = state_batch
+        else:
+            expanded_states = state_batch.repeat_interleave(num_samples, dim=0)
+
+        actions = safe_ddpm_sample(
+            policy,
+            critic_for_guidance,
+            critic,
+            expanded_states,
+            alpha=self.guidance_alpha,
+            beta=self.guidance_beta,
+            step_size=self.guidance_step,
+            noise_scale=self.noise_scale,
+            safe_threshold=self.safe_threshold,
+            guidance=False,
+            num_steps=self.target_sampling_steps,
+        )
+
+        qh1, qh2 = critic(expanded_states, actions)
+        qh_min = torch.min(qh1, qh2)
+
+        if num_samples == 1:
+            return qh_min
+
+        vh = qh_min.view(num_samples, state_batch.size(0), 1).mean(dim=0)
+        return vh
 
     def act(self, obs, sample=False):
         return self.select_action(obs, eval=not sample)

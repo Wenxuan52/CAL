@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm']")
+                    choices=['cal', 'qsm', 'ssm', 'ssm_gauss'],
+                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'ssm_gauss']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -62,7 +62,7 @@ def readParser():
     # ============================================================
     # QSM / SSM Specific Config
     # ============================================================
-    parser.add_argument('--T', type=int, default=50,
+    parser.add_argument('--T', type=int, default=40,
                         help='Number of diffusion timesteps (for DDPM)')
     parser.add_argument('--M_q', type=float, default=1.0,
                         help='Scaling factor for Q-score matching')
@@ -77,13 +77,12 @@ def readParser():
     # ============================================================
     # SSM-specific safety parameters
     # ============================================================
-    parser.add_argument('--ensemble_size', type=int, default=4,
-                        help='Number of ensemble networks for safety critic Q_h')
-    parser.add_argument('--safe_threshold', type=float, default=10.0,
-                        help='Threshold applied on V_h(s); V_h(s) <= threshold is safe')
+    parser.add_argument('--safe_threshold', type=float, default=0.0,
+                        help='Safety value threshold: V_h(s) <= safe_threshold indicates safe states')
     parser.add_argument('--alpha_sm', type=float, default=1.0,
-                        help='Scaling for score guidance (safe & unsafe share this value)')
+                        help='Score guidance weight for reward critic gradient in safe regions')
     parser.add_argument('--beta_sm', type=float, default=1.0,
-                        help='Deprecated: kept for compatibility, tied internally to alpha_sm')
+                        help='Score guidance weight for safety critic gradient in unsafe regions')
 
     return parser.parse_args()
+

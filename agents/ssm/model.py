@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -65,10 +67,23 @@ class DiffusionPolicy(nn.Module):
         betas = torch.linspace(beta_start, beta_end, T)
         alphas = 1.0 - betas
         alpha_hats = torch.cumprod(alphas, dim=0)
+        alpha_hat_prev = torch.cat([alpha_hats.new_tensor([1.0]), alpha_hats[:-1]])
+
+        posterior_variances = betas * (1.0 - alpha_hat_prev) / (1.0 - alpha_hats)
+        posterior_variances[0] = 1e-20
+        posterior_mean_coef1 = betas * torch.sqrt(alpha_hat_prev) / (1.0 - alpha_hats)
+        posterior_mean_coef2 = (
+            (1.0 - alpha_hat_prev) * torch.sqrt(alphas) / (1.0 - alpha_hats)
+        )
 
         self.register_buffer("betas", betas)
         self.register_buffer("alphas", alphas)
         self.register_buffer("alpha_hats", alpha_hats)
+        self.register_buffer("alpha_hat_prev", alpha_hat_prev)
+        self.register_buffer("sqrt_one_minus_alpha_hats", torch.sqrt(1.0 - alpha_hats))
+        self.register_buffer("posterior_variances", posterior_variances)
+        self.register_buffer("posterior_mean_coef1", posterior_mean_coef1)
+        self.register_buffer("posterior_mean_coef2", posterior_mean_coef2)
 
     def forward(self, state: torch.Tensor, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         if t.dim() == 1:
@@ -86,12 +101,60 @@ class DiffusionPolicy(nn.Module):
         x_t = torch.sqrt(alpha_hat_t) * a0 + torch.sqrt(1 - alpha_hat_t) * eps
         return x_t, eps
 
-    def loss(self, state: torch.Tensor, a0: torch.Tensor) -> torch.Tensor:
+    def loss(
+        self,
+        state: torch.Tensor,
+        a0: torch.Tensor,
+        critic,
+        safety_critic,
+        alpha: float = 1.0,
+        beta: float = 3.0,
+        safe_threshold: float = 0.0,
+        m_q: float = 1.0,
+        vh_state: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         batch_size = a0.size(0)
         t = torch.randint(0, self.T, (batch_size,), device=a0.device)
         x_t, eps = self.q_sample(a0, t)
-        eps_pred = self.forward(state, x_t, t.float().unsqueeze(-1))
-        return F.mse_loss(eps_pred, eps)
+
+        t_embed = t.float().unsqueeze(-1)
+        eps_pred = self.forward(state, x_t, t_embed)
+        recon_loss = F.mse_loss(eps_pred, eps)
+
+        # Convert noise prediction to a score estimate following the VP formulation.
+        t_long = t.long()
+        alpha_hat_t = self.alpha_hats[t_long]
+        std_t = torch.sqrt(1.0 - alpha_hat_t + 1e-8)
+        std_t = std_t.view(batch_size, *([1] * (eps_pred.dim() - 1)))
+        score_pred = -eps_pred / std_t
+
+        # Align the learned score with reward/safety gradients at noisy actions.
+        state_detached = state.detach()
+        action_for_grad = x_t.detach().requires_grad_(True)
+
+        q1, q2 = critic(state_detached, action_for_grad)
+        q = torch.min(q1, q2)
+        grad_q = torch.autograd.grad(
+            q.sum(), action_for_grad, retain_graph=True, create_graph=False
+        )[0]
+
+        qh1, qh2 = safety_critic(state_detached, action_for_grad)
+        if vh_state is None:
+            vh_eval = torch.min(qh1, qh2).squeeze(-1)
+        else:
+            vh_eval = vh_state.detach()
+        safe_mask = (vh_eval <= safe_threshold).float().unsqueeze(-1)
+        qh_mean = 0.5 * (qh1 + qh2)
+        grad_qh = torch.autograd.grad(
+            qh_mean.sum(), action_for_grad, retain_graph=False, create_graph=False
+        )[0]
+
+        target_grad = safe_mask * alpha * grad_q - (1.0 - safe_mask) * beta * grad_qh
+        target_grad = target_grad.detach()
+
+        score_loss = F.mse_loss(score_pred, target_grad)
+
+        return recon_loss + m_q * score_loss
 
     def to(self, *args, **kwargs):  # pragma: no cover - passthrough helper
         return super().to(*args, **kwargs)
