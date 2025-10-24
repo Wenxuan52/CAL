@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm', 'ssm_gauss'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'ssm_gauss']")
+                    choices=['cal', 'qsm', 'ssm', 'ssm_gauss', 'guass_test'],
+                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'ssm_gauss', 'guass_test']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -83,6 +83,18 @@ def readParser():
                         help='Score guidance weight for reward critic gradient in safe regions')
     parser.add_argument('--beta_sm', type=float, default=1.0,
                         help='Score guidance weight for safety critic gradient in unsafe regions')
+
+    # ============================================================
+    # Guass-policy SSM test parameters
+    # ============================================================
+    parser.add_argument('--guass_alpha_coef', type=float, default=0.5,
+                        help='Coefficient used in the single-step safety update alpha(V(s)) term')
+    parser.add_argument('--guass_temporal_weight', type=float, default=1.0,
+                        help='Weight for the temporal consistency loss of the safety value network')
+    parser.add_argument('--guass_semantic_weight', type=float, default=0.5,
+                        help='Weight for supervising the safety value network with h(s) = -cost(s) semantics')
+    parser.add_argument('--guass_terminal_value', type=float, default=0.0,
+                        help='Assumed terminal safety value when episodes end early')
 
     return parser.parse_args()
 
