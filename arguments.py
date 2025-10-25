@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm', 'guass_test'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'guass_test']")
+                    choices=['cal', 'qsm', 'ssm', 'guass_test', 'guass_ms'],
+                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'guass_test', 'guass_ms']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -93,6 +93,14 @@ def readParser():
                         help='Weight for supervising the safety critic with semantic targets')
     parser.add_argument('--safety_terminal_value', type=float, default=0.0,
                         help='Terminal safety value when episodes terminate')
+
+    # -------------- guass_ms specific args --------------
+    parser.add_argument('--guass_ms_rollout', type=int, default=3,
+                        help='number of steps for multi-step safety rollout')
+    parser.add_argument('--guass_ms_eta', type=float, default=1.0,
+                        help='rollout decay factor (η in recursive formula)')
+    parser.add_argument('--guass_ms_gamma_h', type=float, default=0.99,
+                        help='discount factor for multi-step safety propagation')
 
     return parser.parse_args()
 

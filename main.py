@@ -20,6 +20,7 @@ from agents.cal.cal import CALAgent
 from agents.qsm.qsm import QSMAgent
 from agents.ssm.ssm import SSMAgent
 from agents.guass_test import GuassTestAgent
+from agents.guass_ms import GuassMSAgent
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -103,11 +104,20 @@ def train_policy_repeats(args, total_step, train_step, pool, agent):
     if train_step > args.max_train_repeat_per_step * total_step:
         return 0
 
+    rollout_len = getattr(args, "guass_ms_rollout", 1) if args.agent.lower() == 'guass_ms' else 1
     for i in range(args.num_train_repeat):
-        batch_state, batch_action, batch_reward, batch_next_state, batch_done = pool.sample(args.policy_train_batch_size)
-        batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
-        batch_done = (~batch_done).astype(int)
-        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), i)
+        batch_state, batch_action, batch_reward, batch_next_state, batch_done = pool.sample(
+            args.policy_train_batch_size, rollout_len=rollout_len
+        )
+
+        if rollout_len == 1:
+            batch_reward = np.squeeze(batch_reward)
+            batch_done = np.squeeze(batch_done)
+
+        batch_done = np.asarray(batch_done, dtype=bool)
+        mask_batch = (~batch_done).astype(np.float32)
+
+        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, mask_batch), i)
     return args.num_train_repeat
 
 
@@ -168,6 +178,8 @@ def main(args):
         agent = SSMAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'guass_test':
         agent = GuassTestAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'guass_ms':
+        agent = GuassMSAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 
