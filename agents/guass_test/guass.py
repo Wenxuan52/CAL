@@ -109,7 +109,7 @@ class GuassTestAgent(Agent):
         return self.alpha_coef * torch.relu(value)
 
     def _h_from_cost(self, cost: torch.Tensor) -> torch.Tensor:
-        return cost - 3.0
+        return cost - 10.0
 
     def update_safety_value(self, state, action, cost, next_state, mask):
         current_v = self.safety_value(state, action)

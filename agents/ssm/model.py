@@ -1,7 +1,5 @@
 """Model components for the diffusion-based Safe Score Matching agent."""
 
-from __future__ import annotations
-
 import math
 import torch
 import torch.nn as nn
@@ -96,4 +94,3 @@ class SafetyQNetwork(nn.Module):
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         x = torch.cat([state, action], dim=-1)
         return self.net(x)
-

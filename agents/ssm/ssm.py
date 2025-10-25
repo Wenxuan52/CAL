@@ -1,6 +1,6 @@
 """Diffusion-based Safe Score Matching agent that integrates the safety framework."""
 
-from __future__ import annotations
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -87,7 +87,12 @@ class SSMAgent(Agent):
     def _h_from_cost(self, cost: torch.Tensor) -> torch.Tensor:
         return cost - 3.0
 
-    def estimate_value(self, state: torch.Tensor, num_samples: int | None = None, use_target: bool = False) -> torch.Tensor:
+    def estimate_value(
+        self,
+        state: torch.Tensor,
+        num_samples: Optional[int] = None,
+        use_target: bool = False,
+    ) -> torch.Tensor:
         """Approximate V_h(s) by Monte-Carlo averaging of Q_h(s, a)."""
 
         if num_samples is None:
@@ -246,4 +251,3 @@ class SSMAgent(Agent):
         torch.save(self.critic_1.state_dict(), path / "critic1.pt")
         torch.save(self.critic_2.state_dict(), path / "critic2.pt")
         torch.save(self.safety_q.state_dict(), path / "safety_q.pt")
-

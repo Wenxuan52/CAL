@@ -1,6 +1,6 @@
 """Utility helpers for the diffusion-based Safe Score Matching agent."""
 
-from __future__ import annotations
+from typing import Callable, Optional, Union
 
 import torch
 import math
@@ -48,7 +48,12 @@ def vp_beta_schedule(timesteps: int) -> torch.Tensor:
     return betas
 
 
-def ddpm_forward_process(actions: torch.Tensor, t: torch.Tensor, alpha_hats: torch.Tensor, noise: torch.Tensor | None = None):
+def ddpm_forward_process(
+    actions: torch.Tensor,
+    t: torch.Tensor,
+    alpha_hats: torch.Tensor,
+    noise: Optional[torch.Tensor] = None,
+):
     """Forward diffusion q(a_t | a_0) following the DDPM formulation."""
 
     if noise is None:
@@ -67,8 +72,8 @@ def ddpm_sampler(
     alpha_hats: torch.Tensor,
     betas: torch.Tensor,
     *,
-    guidance_fn=None,
-    device: torch.device | str = "cuda",
+    guidance_fn: Optional[Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+    device: Union[torch.device, str] = "cuda",
 ):
     """DDPM reverse sampling with optional score guidance."""
 
@@ -108,4 +113,3 @@ def ddpm_sampler(
             a_t = mean
 
     return torch.tanh(a_t)
-
