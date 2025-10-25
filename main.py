@@ -19,7 +19,6 @@ from sampler.safetygym_env_sampler import SafetygymEnvSampler
 from agents.cal.cal import CALAgent
 from agents.qsm.qsm import QSMAgent
 from agents.ssm.ssm import SSMAgent
-from agents.ssm_gauss import SSM_GaussAgent
 from agents.guass_test import GuassTestAgent
 
 
@@ -167,8 +166,6 @@ def main(args):
         agent = QSMAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'ssm':
         agent = SSMAgent(s_dim, env.action_space, args)
-    elif args.agent.lower() == 'ssm_gauss':
-        agent = SSM_GaussAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'guass_test':
         agent = GuassTestAgent(s_dim, env.action_space, args)
     else:

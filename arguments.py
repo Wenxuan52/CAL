@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm', 'ssm_gauss', 'guass_test'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'ssm_gauss', 'guass_test']")
+                    choices=['cal', 'qsm', 'ssm', 'guass_test'],
+                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'guass_test']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -75,26 +75,24 @@ def readParser():
                         help='Dimension of Fourier time embeddings')
 
     # ============================================================
-    # SSM-specific safety parameters
+    # Diffusion SSM safety parameters
     # ============================================================
-    parser.add_argument('--safe_threshold', type=float, default=0.0,
-                        help='Safety value threshold: V_h(s) <= safe_threshold indicates safe states')
-    parser.add_argument('--alpha_sm', type=float, default=1.0,
-                        help='Score guidance weight for reward critic gradient in safe regions')
-    parser.add_argument('--beta_sm', type=float, default=1.0,
-                        help='Score guidance weight for safety critic gradient in unsafe regions')
-
-    # ============================================================
-    # Guass-policy SSM test parameters
-    # ============================================================
-    parser.add_argument('--guass_alpha_coef', type=float, default=0.5,
-                        help='Coefficient used in the single-step safety update alpha(V(s)) term')
-    parser.add_argument('--guass_temporal_weight', type=float, default=1.0,
-                        help='Weight for the temporal consistency loss of the safety value network')
-    parser.add_argument('--guass_semantic_weight', type=float, default=0.5,
-                        help='Weight for supervising the safety value network with h(s) = -cost(s) semantics')
-    parser.add_argument('--guass_terminal_value', type=float, default=0.0,
-                        help='Assumed terminal safety value when episodes end early')
+    parser.add_argument('--M_safe', type=float, default=1.0,
+                        help='Scaling factor for the safety-score guidance term')
+    parser.add_argument('--safe_gate_kappa', type=float, default=0.0,
+                        help='Safety gate threshold κ that separates safe/unsafe sets')
+    parser.add_argument('--safe_gate_alpha', type=float, default=5.0,
+                        help='Slope for the smooth safety gate')
+    parser.add_argument('--safety_value_samples', type=int, default=4,
+                        help='Number of Monte-Carlo samples when estimating V_h(s)')
+    parser.add_argument('--safety_alpha_coef', type=float, default=0.5,
+                        help='Coefficient used in the alpha(V_h) term of the safety update')
+    parser.add_argument('--safety_temporal_weight', type=float, default=1.0,
+                        help='Weight for the temporal loss of the safety critic')
+    parser.add_argument('--safety_semantic_weight', type=float, default=0.5,
+                        help='Weight for supervising the safety critic with semantic targets')
+    parser.add_argument('--safety_terminal_value', type=float, default=0.0,
+                        help='Terminal safety value when episodes terminate')
 
     return parser.parse_args()
 
