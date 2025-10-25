@@ -85,7 +85,7 @@ class SSMAgent(Agent):
         return self.alpha_coef * torch.relu(value)
 
     def _h_from_cost(self, cost: torch.Tensor) -> torch.Tensor:
-        return cost - 3.0
+        return cost - 10.0
 
     def estimate_value(
         self,
@@ -98,15 +98,17 @@ class SSMAgent(Agent):
         if num_samples is None:
             num_samples = self.value_samples
         network = self.safety_q_target if use_target else self.safety_q
-        values = []
-        for _ in range(num_samples):
-            actions = self.sample_action(state, guidance=True)
-            q_val = network(state, actions)
-            values.append(q_val)
-        value = torch.stack(values, dim=0).mean(dim=0)
+        K = int(num_samples)
+        B = state.size(0)
+
+        state_rep = state.repeat_interleave(K, dim=0)
+        with torch.no_grad():
+            action_rep = self.sample_action(state_rep, guidance=False)
+            q_rep = network(state_rep, action_rep).view(K, B, 1).mean(dim=0)
+
         if use_target:
-            return value.detach()
-        return value
+            return q_rep.detach()
+        return q_rep
 
     # ------------------------------------------------------------------
     # Public API
@@ -201,14 +203,22 @@ class SSMAgent(Agent):
         noisy_action = torch.sqrt(alpha_hat) * action + torch.sqrt(1 - alpha_hat) * noise
         noisy_action.requires_grad_(True)
 
+        for net in (self.critic_1, self.critic_2, self.safety_q):
+            for param in net.parameters():
+                param.requires_grad_(False)
+
         q1 = self.critic_1(state, noisy_action).sum()
         q2 = self.critic_2(state, noisy_action).sum()
-        dq_da_1 = torch.autograd.grad(q1, noisy_action, create_graph=True)[0]
-        dq_da_2 = torch.autograd.grad(q2, noisy_action, create_graph=True)[0]
+        dq_da_1 = torch.autograd.grad(q1, noisy_action, create_graph=False)[0]
+        dq_da_2 = torch.autograd.grad(q2, noisy_action, create_graph=False)[0]
         reward_grad = 0.5 * (dq_da_1 + dq_da_2).detach()
 
         safety_q_val = self.safety_q(state, noisy_action)
-        dq_safe = torch.autograd.grad(safety_q_val.sum(), noisy_action, create_graph=True)[0].detach()
+        dq_safe = torch.autograd.grad(safety_q_val.sum(), noisy_action, create_graph=False)[0].detach()
+
+        for net in (self.critic_1, self.critic_2, self.safety_q):
+            for param in net.parameters():
+                param.requires_grad_(True)
         gate = soft_gate(safety_q_val.detach(), kappa=self.kappa, alpha=self.g_alpha)
 
         target_score = -self.M_q * gate * reward_grad - self.M_safe * (1 - gate) * dq_safe

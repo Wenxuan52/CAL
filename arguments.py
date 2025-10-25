@@ -62,7 +62,7 @@ def readParser():
     # ============================================================
     # QSM / SSM Specific Config
     # ============================================================
-    parser.add_argument('--T', type=int, default=40,
+    parser.add_argument('--T', type=int, default=30,
                         help='Number of diffusion timesteps (for DDPM)')
     parser.add_argument('--M_q', type=float, default=1.0,
                         help='Scaling factor for Q-score matching')
