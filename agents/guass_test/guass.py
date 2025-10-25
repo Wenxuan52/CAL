@@ -1,7 +1,5 @@
 """Gauss-policy variant of the SSM agent with local safety updates."""
 
-from __future__ import annotations
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -111,7 +109,7 @@ class GuassTestAgent(Agent):
         return self.alpha_coef * torch.relu(value)
 
     def _h_from_cost(self, cost: torch.Tensor) -> torch.Tensor:
-        return -cost
+        return cost - 3.0
 
     def update_safety_value(self, state, action, cost, next_state, mask):
         current_v = self.safety_value(state, action)
@@ -212,4 +210,3 @@ class GuassTestAgent(Agent):
         torch.save(self.policy.state_dict(), actor_path)
         torch.save(self.critic.state_dict(), critic_path)
         torch.save(self.safety_value.state_dict(), safety_path)
-

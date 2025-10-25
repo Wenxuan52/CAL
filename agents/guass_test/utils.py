@@ -1,7 +1,5 @@
 """Utility helpers for the temporary Gauss-policy based SSM experiments."""
 
-from __future__ import annotations
-
 import torch
 
 
@@ -16,4 +14,3 @@ def soft_gate(qc_value: torch.Tensor, kappa: float = 0.0, alpha: float = 5.0) ->
     """Smooth gate that interpolates between reward maximisation and safety guidance."""
 
     return torch.sigmoid(alpha * (kappa - qc_value))
-

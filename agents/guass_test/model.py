@@ -1,7 +1,5 @@
 """Model definitions for the Gauss-policy SSM experiments."""
 
-from __future__ import annotations
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,7 +31,7 @@ class QNetwork(nn.Module):
 
         self.apply(weights_init_)
 
-    def forward(self, state: torch.Tensor, action: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, state: torch.Tensor, action: torch.Tensor):
         xu = torch.cat([state, action], dim=1)
 
         x1 = F.relu(self.linear1(xu))
@@ -92,7 +90,7 @@ class GaussianPolicy(nn.Module):
     def action_dim(self) -> int:
         return self.mean_linear.out_features
 
-    def forward(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, state: torch.Tensor):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
         mean = self.mean_linear(x)
@@ -100,7 +98,7 @@ class GaussianPolicy(nn.Module):
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=self.log_sig_max)
         return mean, log_std
 
-    def sample(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def sample(self, state: torch.Tensor):
         mean, log_std = self.forward(state)
         std = log_std.exp()
         normal = Normal(mean, std)
@@ -117,4 +115,3 @@ class GaussianPolicy(nn.Module):
         self.action_scale = self.action_scale.to(device)
         self.action_bias = self.action_bias.to(device)
         return super().to(device)
-
