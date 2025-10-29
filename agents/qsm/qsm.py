@@ -15,14 +15,14 @@ class QSMAgent(Agent):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.args = args
-        self.discount = args.gamma
-        self.tau = args.tau
-        self.T = args.T
-        self.M_q = args.M_q
-        self.actor_lr = args.lr
-        self.critic_lr = args.lr
-        self.ddpm_temperature = args.ddpm_temperature
-        self.beta_schedule = args.beta_schedule
+        self.discount = getattr(args, "gamma", 0.99)
+        self.tau = getattr(args, "tau", 0.005)
+        self.T = getattr(args, "T", 40)
+        self.M_q = getattr(args, "M_q", 1.0)
+        self.actor_lr = getattr(args, "lr", 1e-4)
+        self.critic_lr = getattr(args, "lr", 1e-4)
+        self.ddpm_temperature = getattr(args, "ddpm_temperature", 1.0)
+        self.beta_schedule = getattr(args, "beta_schedule", "cosine")
 
         # ====== Networks ======
         self.critic_1 = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
@@ -37,7 +37,7 @@ class QSMAgent(Agent):
             state_dim=num_inputs,
             action_dim=action_space.shape[0],
             hidden_dim=args.hidden_size,
-            time_dim=args.time_dim,
+            time_dim=getattr(args, "time_dim", 64),
         ).to(self.device)
 
         # ====== Optimizers ======
@@ -103,7 +103,7 @@ class QSMAgent(Agent):
 
         # forward diffusion (add noise)
         noise = torch.randn_like(action, device=device)
-        alpha_hat = torch.tensor(self.alpha_hats, device=device)[t.long()].unsqueeze(1)
+        alpha_hat = self.alpha_hats[t.long()].unsqueeze(1)
         noisy_action = torch.sqrt(alpha_hat) * action + torch.sqrt(1 - alpha_hat) * noise
 
         # compute ∇_a Q

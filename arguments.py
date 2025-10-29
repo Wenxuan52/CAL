@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm', 'guass_test'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'guass_test']")
+                    choices=['cal', 'qsm', 'ssm', 'guass_test', 'ssm_test'],
+                    help="Select which agent to use: ['cal', 'qsm', 'ssm', 'guass_test', 'ssm_test']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -51,7 +51,7 @@ def readParser():
     parser.add_argument('--policy', default="Gaussian",
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
     parser.add_argument('--hidden_size', type=int, default=256)
-    parser.add_argument('--lr', type=float, default=0.0003)
+    parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--qc_lr', type=float, default=0.0003)
     parser.add_argument('--critic_target_update_frequency', type=int, default=2)
     parser.add_argument('--replay_size', type=int, default=1000000)
@@ -59,40 +59,20 @@ def readParser():
     parser.add_argument('--max_train_repeat_per_step', type=int, default=5)
     parser.add_argument('--policy_train_batch_size', type=int, default=256)
     
-    # ============================================================
-    # QSM / SSM Specific Config
-    # ============================================================
-    parser.add_argument('--T', type=int, default=40,
-                        help='Number of diffusion timesteps (for DDPM)')
-    parser.add_argument('--M_q', type=float, default=1.0,
-                        help='Scaling factor for Q-score matching')
-    parser.add_argument('--ddpm_temperature', type=float, default=1.0,
-                        help='Noise temperature in DDPM sampling')
-    parser.add_argument('--beta_schedule', type=str, default='cosine',
-                        choices=['cosine', 'vp', 'linear'],
-                        help='Beta schedule type for diffusion process')
-    parser.add_argument('--time_dim', type=int, default=16,
-                        help='Dimension of Fourier time embeddings')
-
-    # ============================================================
-    # Diffusion SSM safety parameters
-    # ============================================================
-    parser.add_argument('--M_safe', type=float, default=1.0,
-                        help='Scaling factor for the safety-score guidance term')
-    parser.add_argument('--safe_gate_kappa', type=float, default=0.0,
-                        help='Safety gate threshold κ that separates safe/unsafe sets')
-    parser.add_argument('--safe_gate_alpha', type=float, default=5.0,
-                        help='Slope for the smooth safety gate')
-    parser.add_argument('--safety_value_samples', type=int, default=4,
-                        help='Number of Monte-Carlo samples when estimating V_h(s)')
-    parser.add_argument('--safety_alpha_coef', type=float, default=0.5,
-                        help='Coefficient used in the alpha(V_h) term of the safety update')
-    parser.add_argument('--safety_temporal_weight', type=float, default=1.0,
-                        help='Weight for the temporal loss of the safety critic')
-    parser.add_argument('--safety_semantic_weight', type=float, default=0.5,
-                        help='Weight for supervising the safety critic with semantic targets')
-    parser.add_argument('--safety_terminal_value', type=float, default=0.0,
-                        help='Terminal safety value when episodes terminate')
+    # =====================================================
+    # SSM_test Diffusion Policy Configuration
+    # =====================================================
+    parser.add_argument('--T', type=int, default=1000, help='Diffusion time steps')
+    parser.add_argument('--time_dim', type=int, default=64, help='Dimension of Fourier time embeddings')
+    parser.add_argument('--alpha_coef', type=float, default=1.0, help='Weight of reward-driven guidance in φ(s,a)')
+    parser.add_argument('--beta_coef', type=float, default=1.0, help='Weight of safety-driven guidance in φ(s,a)')
+    parser.add_argument('--safe_margin', type=float, default=0.0, help='Safety margin threshold applied to Q_h values')
+    parser.add_argument('--grad_clip', type=float, default=10.0, help='Gradient clipping magnitude for φ and actor updates')
+    parser.add_argument('--vh_samples', type=int, default=16, help='Number of samples when estimating V_h(s)')
+    parser.add_argument('--pretrained_critic_path', type=str,
+                        default='results/Safexp-CarButton1-v0/carbutton1_guass_test/2025-10-29_03-42_seed7521/guass_test_critic_.pth')
+    parser.add_argument('--pretrained_safety_path', type=str,
+                        default='results/Safexp-CarButton1-v0/carbutton1_guass_test/2025-10-29_03-42_seed7521/guass_test_safety_.pth')
 
     return parser.parse_args()
 
