@@ -20,6 +20,7 @@ from agents.cal.cal import CALAgent
 from agents.qsm.qsm import QSMAgent
 from agents.ssm.ssm import SSMAgent
 from agents.guass_test import GuassTestAgent
+from agents.ssm_test import SSMDiffusionAgent
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -168,6 +169,8 @@ def main(args):
         agent = SSMAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'guass_test':
         agent = GuassTestAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'ssm_test':
+        agent = SSMDiffusionAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 

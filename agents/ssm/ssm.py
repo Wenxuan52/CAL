@@ -21,21 +21,21 @@ class SSMAgent(Agent):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.args = args
-        self.discount = args.gamma
-        self.safety_discount = args.safety_gamma
-        self.tau = args.tau
-        self.T = args.T
-        self.M_q = args.M_q
-        self.M_safe = args.M_safe
-        self.ddpm_temperature = args.ddpm_temperature
-        self.beta_schedule = args.beta_schedule
-        self.value_samples = args.safety_value_samples
-        self.kappa = args.safe_gate_kappa
-        self.g_alpha = args.safe_gate_alpha
-        self.alpha_coef = args.safety_alpha_coef
-        self.temporal_weight = args.safety_temporal_weight
-        self.semantic_weight = args.safety_semantic_weight
-        self.terminal_safe_value = args.safety_terminal_value
+        self.discount = getattr(args, "gamma", 0.99)
+        self.safety_discount = getattr(args, "safety_gamma", 0.99)
+        self.tau = getattr(args, "tau", 0.005)
+        self.T = getattr(args, "T", 40)
+        self.M_q = getattr(args, "M_q", 1.0)
+        self.M_safe = getattr(args, "M_safe", 1.0)
+        self.ddpm_temperature = getattr(args, "ddpm_temperature", 1.0)
+        self.beta_schedule = getattr(args, "beta_schedule", "cosine")
+        self.value_samples = getattr(args, "safety_value_samples", 4)
+        self.kappa = getattr(args, "safe_gate_kappa", 0.0)
+        self.g_alpha = getattr(args, "safe_gate_alpha", 5.0)
+        self.alpha_coef = getattr(args, "safety_alpha_coef", 0.5)
+        self.temporal_weight = getattr(args, "safety_temporal_weight", 1.0)
+        self.semantic_weight = getattr(args, "safety_semantic_weight", 0.5)
+        self.terminal_safe_value = getattr(args, "safety_terminal_value", 0.0)
 
         action_dim = action_space.shape[0]
 
@@ -57,14 +57,16 @@ class SSMAgent(Agent):
             state_dim=num_inputs,
             action_dim=action_dim,
             hidden_dim=args.hidden_size,
-            time_dim=args.time_dim,
+            time_dim=getattr(args, "time_dim", 64),
         ).to(self.device)
 
         # Optimisers
-        self.actor_optim = torch.optim.Adam(self.score_model.parameters(), lr=args.lr)
-        self.critic_optim_1 = torch.optim.Adam(self.critic_1.parameters(), lr=args.lr)
-        self.critic_optim_2 = torch.optim.Adam(self.critic_2.parameters(), lr=args.lr)
-        self.safety_optim = torch.optim.Adam(self.safety_q.parameters(), lr=args.qc_lr)
+        lr = getattr(args, "lr", 1e-4)
+        qc_lr = getattr(args, "qc_lr", lr)
+        self.actor_optim = torch.optim.Adam(self.score_model.parameters(), lr=lr)
+        self.critic_optim_1 = torch.optim.Adam(self.critic_1.parameters(), lr=lr)
+        self.critic_optim_2 = torch.optim.Adam(self.critic_2.parameters(), lr=lr)
+        self.safety_optim = torch.optim.Adam(self.safety_q.parameters(), lr=qc_lr)
 
         # Diffusion schedules
         if self.beta_schedule == "cosine":
