@@ -46,7 +46,6 @@ def readParser():
     parser.add_argument('--train_every_n_steps', type=int, default=1)
     parser.add_argument('--safety_gamma', type=float, default=0.99)
     parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--tau', type=float, default=0.005)
     parser.add_argument('--alpha', type=float, default=0.2)
     parser.add_argument('--policy', default="Gaussian",
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
@@ -73,6 +72,20 @@ def readParser():
                         default='results/Safexp-CarButton1-v0/carbutton1_guass_test/2025-10-29_03-42_seed7521/guass_test_critic_.pth')
     parser.add_argument('--pretrained_safety_path', type=str,
                         default='results/Safexp-CarButton1-v0/carbutton1_guass_test/2025-10-29_03-42_seed7521/guass_test_safety_.pth')
+
+    # =====================================================
+    # Jointly trained diffusion SSM configuration
+    # =====================================================
+    ssm_group = parser.add_argument_group("SSM Training")
+    ssm_group.add_argument("--q_lr", type=float, default=3e-4)
+    ssm_group.add_argument("--qh_lr", type=float, default=3e-4)
+    ssm_group.add_argument("--tau", type=float, default=0.005)
+    ssm_group.add_argument("--update_q_every", type=int, default=1)
+    ssm_group.add_argument("--update_qh_every", type=int, default=1)
+    ssm_group.add_argument("--update_score_every", type=int, default=1)
+    ssm_group.add_argument("--warmup_epochs", type=int, default=10)
+    ssm_group.add_argument("--num_epochs", type=int, default=300)
+    ssm_group.add_argument("--eval_interval", type=int, default=10)
 
     return parser.parse_args()
 
