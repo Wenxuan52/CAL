@@ -52,14 +52,18 @@ def ddpm_sampler(
 
     for t in reversed(range(T)):
         t_tensor = torch.full((B, 1), float(t), device=device)
+
+        action = action.detach()
+        action.requires_grad_(True)
         eps = score_model(state, action, t_tensor)
 
-        # if guidance_fn is not None:
-        #     with torch.enable_grad():
-        #         action.requires_grad_(True)
-        #         guidance = guidance_fn(state, action, t_tensor)
-        #     action = action.detach()
-        #     eps = eps - guidance.detach()
+        if guidance_fn is not None:
+            with torch.enable_grad():
+                guidance = guidance_fn(state, action, t_tensor)
+            eps = eps - guidance.detach()
+
+        eps = eps.detach()
+        action = action.detach()
 
         alpha_t = alphas[t]
         alpha_hat_t = alpha_hats[t]
@@ -144,10 +148,7 @@ def compute_phi(
     safe_mask = (qh_value <= safe_margin).float()
     unsafe_mask = 1.0 - safe_mask
 
-    # phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
-    
-    lamb = 0.5
-    phi = alpha * grad_q - lamb * beta * grad_qh
+    phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
 
     norm = phi.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     phi = phi / norm
