@@ -1,9 +1,7 @@
 """Diffusion policy agent that reuses pretrained Gaussian critics for safety guidance."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch.nn.functional as F
@@ -106,9 +104,10 @@ class SSMDiffusionAgent(Agent):
         )
 
     def guidance_fn(self, state: torch.Tensor, action: torch.Tensor, t_tensor: torch.Tensor) -> torch.Tensor:
+        action_tanh = torch.tanh(action)
         return compute_phi(
             state,
-            action,
+            action_tanh,
             self.critic,
             self.safety_q,
             alpha=self.alpha_coef,
@@ -117,7 +116,9 @@ class SSMDiffusionAgent(Agent):
             grad_clip=self.grad_clip,
         )
 
-    def estimate_vh(self, state: torch.Tensor, num_samples: int | None = None) -> torch.Tensor:
+    def estimate_vh(
+        self, state: torch.Tensor, num_samples: Optional[int] = None
+    ) -> torch.Tensor:
         if num_samples is None:
             num_samples = self.vh_samples
         if state.dim() == 1:
@@ -144,9 +145,11 @@ class SSMDiffusionAgent(Agent):
         alpha_hat = self.alpha_hats[t_indices].unsqueeze(1)
         noisy_action = torch.sqrt(alpha_hat) * action + torch.sqrt(1 - alpha_hat) * noise
 
+        noisy_action_teacher = torch.tanh(noisy_action)
+
         phi_target = compute_phi(
             state,
-            noisy_action,
+            noisy_action_teacher,
             self.critic,
             self.safety_q,
             alpha=self.alpha_coef,
@@ -156,7 +159,8 @@ class SSMDiffusionAgent(Agent):
         )
 
         eps_pred = self.score_model(state, noisy_action.detach(), t_indices.float().unsqueeze(1))
-        loss = F.mse_loss(eps_pred, phi_target)
+        # loss = F.mse_loss(eps_pred, phi_target)
+        loss = F.mse_loss(eps_pred + phi_target, torch.zeros_like(eps_pred))
 
         self.actor_optim.zero_grad()
         loss.backward()
@@ -180,4 +184,3 @@ class SSMDiffusionAgent(Agent):
     def save_model(self, path: Path, suffix: str = "") -> None:
         path.mkdir(parents=True, exist_ok=True)
         torch.save(self.score_model.state_dict(), path / f"ssm_test_score_{suffix}.pth")
-

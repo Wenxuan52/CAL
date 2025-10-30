@@ -62,11 +62,11 @@ def readParser():
     # =====================================================
     # SSM_test Diffusion Policy Configuration
     # =====================================================
-    parser.add_argument('--T', type=int, default=1000, help='Diffusion time steps')
+    parser.add_argument('--T', type=int, default=50, help='Diffusion time steps')
     parser.add_argument('--time_dim', type=int, default=64, help='Dimension of Fourier time embeddings')
     parser.add_argument('--alpha_coef', type=float, default=1.0, help='Weight of reward-driven guidance in φ(s,a)')
     parser.add_argument('--beta_coef', type=float, default=1.0, help='Weight of safety-driven guidance in φ(s,a)')
-    parser.add_argument('--safe_margin', type=float, default=0.0, help='Safety margin threshold applied to Q_h values')
+    parser.add_argument('--safe_margin', type=float, default=10.0, help='Safety margin threshold applied to Q_h values')
     parser.add_argument('--grad_clip', type=float, default=10.0, help='Gradient clipping magnitude for φ and actor updates')
     parser.add_argument('--vh_samples', type=int, default=16, help='Number of samples when estimating V_h(s)')
     parser.add_argument('--pretrained_critic_path', type=str,

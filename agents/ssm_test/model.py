@@ -1,8 +1,8 @@
 """Neural building blocks for the diffusion-based ``ssm_test`` agent."""
 
-from __future__ import annotations
-
 import math
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,7 +33,7 @@ class FourierFeatures(nn.Module):
 class MLP(nn.Module):
     """Simple feed-forward network with configurable hidden layers."""
 
-    def __init__(self, input_dim: int, hidden_dims, output_dim: int, activation: nn.Module | None = None):
+    def __init__(self, input_dim: int, hidden_dims, output_dim: int, activation: Optional[nn.Module] = None):
         super().__init__()
         if activation is None:
             activation = nn.SiLU()

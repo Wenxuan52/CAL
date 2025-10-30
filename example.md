@@ -6,11 +6,15 @@ python main.py --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_test
 
 ### CarButton1
 
-python main.py --agent ssm --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm --num_epoch 375 --cuda --use_tensorboard --save_history
+python main.py --agent ssm --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm --num_epoch 250 --cuda --use_tensorboard --save_history --save_parameters
 
-python main.py --agent guass_test --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_guass_test --num_epoch 375 --cuda --use_tensorboard --save_history
+python main.py --agent ssm_test --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm_0.5lamb --num_epoch 250 --cuda --use_tensorboard --save_history --save_parameters
 
-python main.py --agent ssm_gauss --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm --num_epoch 375 --cuda
+python main.py --agent cal --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_guass_test --num_epoch 250 --cuda
+
+python main.py --agent guass_test --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_guass_test --num_epoch 250 --cuda --use_tensorboard --save_history --save_parameters
+
+python main.py --agent guass_ms --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_guass_ms --num_epoch 375 --cuda --use_tensorboard --save_history
 
 ### CarButton2
 

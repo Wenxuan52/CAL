@@ -1,7 +1,5 @@
 """Utility helpers for the diffusion-based ``ssm_test`` agent."""
 
-from __future__ import annotations
-
 import math
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Union
@@ -56,12 +54,12 @@ def ddpm_sampler(
         t_tensor = torch.full((B, 1), float(t), device=device)
         eps = score_model(state, action, t_tensor)
 
-        if guidance_fn is not None:
-            with torch.enable_grad():
-                action.requires_grad_(True)
-                guidance = guidance_fn(state, action, t_tensor)
-            action = action.detach()
-            eps = eps - guidance.detach()
+        # if guidance_fn is not None:
+        #     with torch.enable_grad():
+        #         action.requires_grad_(True)
+        #         guidance = guidance_fn(state, action, t_tensor)
+        #     action = action.detach()
+        #     eps = eps - guidance.detach()
 
         alpha_t = alphas[t]
         alpha_hat_t = alpha_hats[t]
@@ -129,7 +127,8 @@ def compute_phi(
     """Compute the piecewise guidance field φ(s, a) used for training."""
 
     state = state.to(action.device)
-    action_var = torch.tanh(action.detach().clone().requires_grad_(True))
+    # ⚠️ critic/Qh 输入域对齐: 所有动作在送入 critic 前均经过 tanh 压缩到 [-1,1]
+    action_var = torch.tanh(action.detach().clone()).requires_grad_(True)
 
     q_value = critic(state, action_var)
     if isinstance(q_value, (tuple, list)):
@@ -144,7 +143,10 @@ def compute_phi(
     safe_mask = (qh_value <= safe_margin).float()
     unsafe_mask = 1.0 - safe_mask
 
-    phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
+    # phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
+    
+    lamb = 0.5
+    phi = alpha * grad_q - lamb * beta * grad_qh
 
     norm = phi.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     phi = phi / norm
