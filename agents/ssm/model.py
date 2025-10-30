@@ -1,4 +1,4 @@
-"""Neural building blocks for the diffusion-based ``ssm_test`` agent."""
+"""Neural building blocks for the diffusion-based SSM agent."""
 
 import math
 from typing import Optional
@@ -6,6 +6,62 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+LOG_SIG_MAX = 2
+LOG_SIG_MIN = -20
+
+
+def weights_init_(m: nn.Module) -> None:
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight, gain=1)
+        nn.init.constant_(m.bias, 0.0)
+
+
+class QNetwork(nn.Module):
+    """Twin-head critic that mirrors the Gaussian SSM baseline."""
+
+    def __init__(self, num_inputs: int, num_actions: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.linear1 = nn.Linear(num_inputs + num_actions, hidden_dim)
+        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear3 = nn.Linear(hidden_dim, 1)
+
+        self.linear4 = nn.Linear(num_inputs + num_actions, hidden_dim)
+        self.linear5 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear6 = nn.Linear(hidden_dim, 1)
+
+        self.apply(weights_init_)
+
+    def forward(self, state: torch.Tensor, action: torch.Tensor):
+        xu = torch.cat([state, action], dim=1)
+
+        x1 = F.relu(self.linear1(xu))
+        x1 = F.relu(self.linear2(x1))
+        q1 = self.linear3(x1)
+
+        x2 = F.relu(self.linear4(xu))
+        x2 = F.relu(self.linear5(x2))
+        q2 = self.linear6(x2)
+        return q1, q2
+
+
+class SafetyValueNetwork(nn.Module):
+    """Single-head network used for the safety critic Qₕ."""
+
+    def __init__(self, num_inputs: int, num_actions: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.linear1 = nn.Linear(num_inputs + num_actions, hidden_dim)
+        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear3 = nn.Linear(hidden_dim, 1)
+        self.activation = nn.SiLU()
+        self.apply(weights_init_)
+
+    def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        xu = torch.cat([state, action], dim=1)
+        x = self.activation(self.linear1(xu))
+        x = self.activation(self.linear2(x))
+        return self.linear3(x)
 
 
 class FourierFeatures(nn.Module):

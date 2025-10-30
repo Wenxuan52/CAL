@@ -18,7 +18,7 @@ from sampler.safetygym_env_sampler import SafetygymEnvSampler
 # Agents
 from agents.cal.cal import CALAgent
 from agents.qsm.qsm import QSMAgent
-from agents.ssm.ssm import SSMAgent
+from agents.ssm.agent import SSMAgent
 from agents.guass_test import GuassTestAgent
 from agents.ssm_test import SSMDiffusionAgent
 
@@ -89,6 +89,121 @@ def train(args, env_sampler, agent, pool, writer=None):
     # save network parameters after training
     if args.save_parameters:
         agent.save_model(save_dir)
+
+
+def evaluate(agent, env, args, episodes=1):
+    def _process_state(state):
+        if args.env_name == 'Ant-v3':
+            return state[:27]
+        if args.env_name == 'Humanoid-v3':
+            return state[:45]
+        return state
+
+    total_return = 0.0
+    total_cost = 0.0
+    for _ in range(episodes):
+        reset_result = env.reset()
+        if isinstance(reset_result, tuple):
+            state, _ = reset_result
+        else:
+            state = reset_result
+        state = _process_state(state)
+        done = False
+        step = 0
+        episode_return = 0.0
+        episode_cost = 0.0
+        while not done and step < args.epoch_length:
+            action = agent.select_action(state, eval=True)
+            step_result = env.step(action)
+            if len(step_result) == 5:
+                next_state, reward, terminated, truncated, info = step_result
+                done = terminated or truncated
+            else:
+                next_state, reward, done, info = step_result
+            next_state = _process_state(next_state)
+            cost = info.get('cost') if isinstance(info, dict) else 0.0
+            if cost is None:
+                if isinstance(info, dict):
+                    if 'y_velocity' in info and 'x_velocity' in info:
+                        cost = float((info['y_velocity'] ** 2 + info['x_velocity'] ** 2) ** 0.5)
+                    elif 'x_velocity' in info:
+                        cost = float(abs(info['x_velocity']))
+                    else:
+                        cost = 0.0
+                else:
+                    cost = 0.0
+            episode_return += float(reward)
+            if args.safetygym:
+                episode_cost += float(cost)
+            else:
+                episode_cost += float(cost) * (args.gamma ** step)
+            state = next_state
+            step += 1
+        total_return += episode_return
+        total_cost += episode_cost
+    return total_return / episodes, total_cost / episodes
+
+
+def train_ssm_agent(args, env_sampler, agent, pool, writer=None):
+    total_step = 0
+    exploration_before_start(args, env_sampler, pool, agent)
+    history = []
+    save_dir = None
+
+    eval_env = gym.make(args.env_name)
+    try:
+        eval_env.reset(seed=args.seed)
+    except TypeError:
+        if hasattr(eval_env, 'seed'):
+            eval_env.seed(args.seed)
+    try:
+        for epoch in range(args.num_epochs):
+            for step in range(args.epoch_length):
+                cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, step)
+                pool.push(cur_state, action, reward, next_state, done)
+                total_step += 1
+
+            agent.set_epoch(epoch)
+            metrics = agent.update(pool)
+
+            if writer is not None and metrics:
+                for key, value in metrics.items():
+                    writer.add_scalar(f'SSM/{key}', value, epoch)
+
+            if epoch % args.eval_interval == 0:
+                avg_return, avg_cost = evaluate(agent, eval_env, args, episodes=args.num_eval_epochs)
+                print(
+                    f"[SSM] epoch={epoch} step={total_step} return={avg_return:.2f} cost={avg_cost:.2f}"
+                )
+                if writer is not None:
+                    writer.add_scalar('Eval/return', avg_return, epoch)
+                    writer.add_scalar('Eval/cost', avg_cost, epoch)
+                if args.save_history:
+                    history.append({
+                        'epoch': int(epoch),
+                        'step': int(total_step),
+                        'return': float(avg_return),
+                        'cost': float(avg_cost),
+                    })
+
+        if args.save_history and history:
+            import datetime
+
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+            save_dir = Path.cwd() / "results" / args.env_name / args.experiment_name / f"{date_str}_seed{args.seed}"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = save_dir / "history.csv"
+            import pandas as pd
+
+            pd.DataFrame(history).to_csv(save_path, index=False)
+            print(f"[History] Saved SSM training history to {save_path}")
+        if args.save_parameters:
+            if save_dir is None:
+                save_dir = Path.cwd() / "results" / args.env_name / args.experiment_name / "latest"
+                save_dir.mkdir(parents=True, exist_ok=True)
+            agent.save_model(save_dir)
+    finally:
+        eval_env.close()
 
 
 def exploration_before_start(args, env_sampler, pool, agent):
@@ -183,10 +298,16 @@ def main(args):
     else:
         env_sampler = MuJoCoEnvSampler(args, env)
     
-    if args.use_tensorboard:
-        train(args, env_sampler, agent, pool, writer=writer)
+    if args.agent.lower() == 'ssm':
+        if args.use_tensorboard:
+            train_ssm_agent(args, env_sampler, agent, pool, writer=writer)
+        else:
+            train_ssm_agent(args, env_sampler, agent, pool, writer=None)
     else:
-        train(args, env_sampler, agent, pool, writer=None)
+        if args.use_tensorboard:
+            train(args, env_sampler, agent, pool, writer=writer)
+        else:
+            train(args, env_sampler, agent, pool, writer=None)
 
     if args.use_tensorboard:
         writer.close()
