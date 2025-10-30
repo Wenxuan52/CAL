@@ -127,26 +127,27 @@ def compute_phi(
     """Compute the piecewise guidance field φ(s, a) used for training."""
 
     state = state.to(action.device)
-    # ⚠️ critic/Qh 输入域对齐: 所有动作在送入 critic 前均经过 tanh 压缩到 [-1,1]
-    action_var = torch.tanh(action.detach().clone()).requires_grad_(True)
 
-    q_value = critic(state, action_var)
+    # action_var = torch.tanh(action.detach().clone()).requires_grad_(True)
+    action = action.clone().detach().requires_grad_(True)
+
+    q_value = critic(state, action)
     if isinstance(q_value, (tuple, list)):
         q_value = q_value[0]
-    grad_q = torch.autograd.grad(q_value.mean(), action_var, retain_graph=False, create_graph=False)[0]
+    grad_q = torch.autograd.grad(q_value.mean(), action, retain_graph=False, create_graph=False)[0]
 
-    qh_value = safety_q(state, action_var)
+    qh_value = safety_q(state, action)
     if isinstance(qh_value, (tuple, list)):
         qh_value = qh_value[0]
-    grad_qh = torch.autograd.grad(qh_value.mean(), action_var, retain_graph=False, create_graph=False)[0]
+    grad_qh = torch.autograd.grad(qh_value.mean(), action, retain_graph=False, create_graph=False)[0]
 
     safe_mask = (qh_value <= safe_margin).float()
     unsafe_mask = 1.0 - safe_mask
 
-    # phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
+    phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
     
-    lamb = 0.5
-    phi = alpha * grad_q - lamb * beta * grad_qh
+    # lamb = 0.5
+    # phi = alpha * grad_q - lamb * beta * grad_qh
 
     norm = phi.norm(dim=-1, keepdim=True).clamp(min=1e-6)
     phi = phi / norm

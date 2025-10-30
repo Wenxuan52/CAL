@@ -1,31 +1,16 @@
-"""Utility helpers for the diffusion-based Safe Score Matching agent."""
+"""Utility helpers for the diffusion-based ``ssm_test`` agent."""
 
-from typing import Callable, Optional, Union
+import math
+from pathlib import Path
+from typing import Callable, Optional, Tuple, Union
 
 import torch
-import math
-import numpy as np
 
+from agents.guass_test.model import QNetwork, SafetyValueNetwork
 
-def soft_update(target: torch.nn.Module, source: torch.nn.Module, tau: float) -> None:
-    """Perform Polyak averaging between ``source`` and ``target`` modules."""
-
-    for target_param, param in zip(target.parameters(), source.parameters()):
-        target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
-
-
-def soft_gate(qc_value: torch.Tensor, kappa: float = 0.0, alpha: float = 5.0) -> torch.Tensor:
-    """Smooth gate that interpolates between reward maximisation and safety guidance."""
-
-    return torch.sigmoid(alpha * (kappa - qc_value))
-
-
-# ---------------------------------------------------------------------------
-# Diffusion utilities
-# ---------------------------------------------------------------------------
 
 def cosine_beta_schedule(timesteps: int, s: float = 0.008) -> torch.Tensor:
-    """Cosine schedule from https://arxiv.org/abs/2102.09672."""
+    """Cosine noise schedule introduced in https://arxiv.org/abs/2102.09672."""
 
     steps = timesteps + 1
     t = torch.linspace(0, timesteps, steps, dtype=torch.float32) / timesteps
@@ -33,35 +18,6 @@ def cosine_beta_schedule(timesteps: int, s: float = 0.008) -> torch.Tensor:
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     return torch.clamp(betas, 0.0, 0.999)
-
-
-def linear_beta_schedule(timesteps: int, beta_start: float = 1e-4, beta_end: float = 2e-2) -> torch.Tensor:
-    return torch.linspace(beta_start, beta_end, timesteps, dtype=torch.float32)
-
-
-def vp_beta_schedule(timesteps: int) -> torch.Tensor:
-    t = torch.arange(1, timesteps + 1, dtype=torch.float32)
-    T = float(timesteps)
-    b_max, b_min = 10.0, 0.1
-    alpha = torch.exp(-b_min / T - 0.5 * (b_max - b_min) * (2 * t - 1) / T ** 2)
-    betas = 1 - alpha
-    return betas
-
-
-def ddpm_forward_process(
-    actions: torch.Tensor,
-    t: torch.Tensor,
-    alpha_hats: torch.Tensor,
-    noise: Optional[torch.Tensor] = None,
-):
-    """Forward diffusion q(a_t | a_0) following the DDPM formulation."""
-
-    if noise is None:
-        noise = torch.randn_like(actions)
-    sqrt_alpha_hat = torch.sqrt(alpha_hats[t]).unsqueeze(1)
-    sqrt_one_minus = torch.sqrt(1 - alpha_hats[t]).unsqueeze(1)
-    noisy_actions = sqrt_alpha_hat * actions + sqrt_one_minus * noise
-    return noisy_actions, noise
 
 
 def ddpm_sampler(
@@ -74,28 +30,36 @@ def ddpm_sampler(
     *,
     guidance_fn: Optional[Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]] = None,
     device: Union[torch.device, str] = "cuda",
-):
-    """DDPM reverse sampling with optional score guidance."""
+) -> torch.Tensor:
+    """DDPM-style ancestral sampler that supports additive safety guidance."""
 
-    if isinstance(alphas, np.ndarray):
+    if not torch.is_tensor(alphas):
         alphas = torch.tensor(alphas, dtype=torch.float32, device=device)
+    else:
+        alphas = alphas.to(device)
+    if not torch.is_tensor(alpha_hats):
         alpha_hats = torch.tensor(alpha_hats, dtype=torch.float32, device=device)
+    else:
+        alpha_hats = alpha_hats.to(device)
+    if not torch.is_tensor(betas):
         betas = torch.tensor(betas, dtype=torch.float32, device=device)
+    else:
+        betas = betas.to(device)
 
     B = state.size(0)
     action_dim = score_model.action_dim
-    a_t = torch.randn(B, action_dim, device=device)
+    action = torch.randn(B, action_dim, device=device)
 
     for t in reversed(range(T)):
         t_tensor = torch.full((B, 1), float(t), device=device)
-        eps_pred = score_model(state, a_t, t_tensor)
+        eps = score_model(state, action, t_tensor)
 
-        if guidance_fn is not None:
-            with torch.enable_grad():
-                a_t.requires_grad_(True)
-                guidance = guidance_fn(state, a_t, t_tensor)
-            a_t = a_t.detach()
-            eps_pred = eps_pred - guidance.detach()
+        # if guidance_fn is not None:
+        #     with torch.enable_grad():
+        #         action.requires_grad_(True)
+        #         guidance = guidance_fn(state, action, t_tensor)
+        #     action = action.detach()
+        #     eps = eps - guidance.detach()
 
         alpha_t = alphas[t]
         alpha_hat_t = alpha_hats[t]
@@ -103,13 +67,91 @@ def ddpm_sampler(
 
         coef1 = 1.0 / torch.sqrt(alpha_t)
         coef2 = (1 - alpha_t) / torch.sqrt(1 - alpha_hat_t)
-        mean = coef1 * (a_t - coef2 * eps_pred)
+        mean = coef1 * (action - coef2 * eps)
 
         if t > 0:
-            noise = torch.randn_like(a_t)
+            noise = torch.randn_like(action)
             sigma_t = torch.sqrt(beta_t)
-            a_t = mean + sigma_t * noise
+            action = mean + sigma_t * noise
         else:
-            a_t = mean
+            action = mean
 
-    return torch.tanh(a_t)
+    return action
+
+
+def atanh_clamped(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
+    """Numerically stable inverse tanh used for domain alignment."""
+
+    x = torch.clamp(x, -1 + eps, 1 - eps)
+    return 0.5 * (torch.log1p(x) - torch.log1p(-x))
+
+
+def load_and_freeze_critics(
+    critic_path: Union[str, Path],
+    safety_path: Union[str, Path],
+    state_dim: int,
+    action_dim: int,
+    hidden_dim: int,
+    device: torch.device,
+) -> Tuple[QNetwork, SafetyValueNetwork]:
+    """Instantiate the Gaussian critics and load pretrained weights."""
+
+    critic = QNetwork(state_dim, action_dim, hidden_dim).to(device)
+    safety_q = SafetyValueNetwork(state_dim, action_dim, hidden_dim).to(device)
+
+    critic_state = torch.load(critic_path, map_location=device)
+    safety_state = torch.load(safety_path, map_location=device)
+    critic.load_state_dict(critic_state)
+    safety_q.load_state_dict(safety_state)
+
+    critic.eval()
+    safety_q.eval()
+    for module in (critic, safety_q):
+        for param in module.parameters():
+            param.requires_grad_(False)
+
+    return critic, safety_q
+
+
+def compute_phi(
+    state: torch.Tensor,
+    action: torch.Tensor,
+    critic: torch.nn.Module,
+    safety_q: torch.nn.Module,
+    *,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    safe_margin: float = 0.0,
+    grad_clip: float = 10.0,
+) -> torch.Tensor:
+    """Compute the piecewise guidance field φ(s, a) used for training."""
+
+    state = state.to(action.device)
+
+    # action_var = torch.tanh(action.detach().clone()).requires_grad_(True)
+    action = action.clone().detach().requires_grad_(True)
+
+    q_value = critic(state, action)
+    if isinstance(q_value, (tuple, list)):
+        q_value = q_value[0]
+    grad_q = torch.autograd.grad(q_value.mean(), action, retain_graph=False, create_graph=False)[0]
+
+    qh_value = safety_q(state, action)
+    if isinstance(qh_value, (tuple, list)):
+        qh_value = qh_value[0]
+    grad_qh = torch.autograd.grad(qh_value.mean(), action, retain_graph=False, create_graph=False)[0]
+
+    safe_mask = (qh_value <= safe_margin).float()
+    unsafe_mask = 1.0 - safe_mask
+
+    # phi = alpha * safe_mask * grad_q - beta * unsafe_mask * grad_qh
+    
+    lamb = 0.5
+    phi = alpha * grad_q - lamb * beta * grad_qh
+
+    norm = phi.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    phi = phi / norm
+    if grad_clip > 0:
+        phi = torch.clamp(phi, -grad_clip, grad_clip)
+
+    return phi.detach()

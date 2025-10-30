@@ -131,7 +131,7 @@ def main(args):
         Raise("Unknown env type")
         
 
-    # env.seed(args.seed)
+    env.seed(args.seed)
 
     s_dim = env.observation_space.shape[0]
     
