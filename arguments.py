@@ -63,7 +63,7 @@ def readParser():
     # =====================================================
     parser.add_argument('--T', type=int, default=50, help='Diffusion time steps')
     parser.add_argument('--time_dim', type=int, default=64, help='Dimension of Fourier time embeddings')
-    parser.add_argument('--alpha_coef', type=float, default=1.0, help='Weight of reward-driven guidance in φ(s,a)')
+    parser.add_argument('--alpha_coef', type=float, default=60.0, help='Weight of reward-driven guidance in φ(s,a)')
     parser.add_argument('--beta_coef', type=float, default=1.0, help='Weight of safety-driven guidance in φ(s,a)')
     parser.add_argument('--safe_margin', type=float, default=10.0, help='Safety margin threshold applied to Q_h values')
     parser.add_argument('--grad_clip', type=float, default=10.0, help='Gradient clipping magnitude for φ and actor updates')
@@ -80,12 +80,12 @@ def readParser():
     ssm_group.add_argument("--q_lr", type=float, default=3e-4)
     ssm_group.add_argument("--qh_lr", type=float, default=3e-4)
     ssm_group.add_argument("--tau", type=float, default=0.005)
-    ssm_group.add_argument("--update_q_every", type=int, default=1)
-    ssm_group.add_argument("--update_qh_every", type=int, default=1)
-    ssm_group.add_argument("--update_score_every", type=int, default=1)
-    ssm_group.add_argument("--warmup_epochs", type=int, default=10)
+    ssm_group.add_argument("--update_q_every", type=int, default=5)
+    ssm_group.add_argument("--update_qh_every", type=int, default=5)
+    ssm_group.add_argument("--update_score_every", type=int, default=5)
+    ssm_group.add_argument("--warmup_epochs", type=int, default=5)
     ssm_group.add_argument("--num_epochs", type=int, default=300)
-    ssm_group.add_argument("--eval_interval", type=int, default=10)
+    ssm_group.add_argument("--eval_interval", type=int, default=1)
 
     return parser.parse_args()
 

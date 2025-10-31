@@ -176,8 +176,8 @@ def train_ssm_agent(args, env_sampler, agent, pool, writer=None):
                     f"[SSM] epoch={epoch} step={total_step} return={avg_return:.2f} cost={avg_cost:.2f}"
                 )
                 if writer is not None:
-                    writer.add_scalar('Eval/return', avg_return, epoch)
-                    writer.add_scalar('Eval/cost', avg_cost, epoch)
+                    writer.add_scalar('Eval/return', avg_return, total_step)
+                    writer.add_scalar('Eval/cost', avg_cost, total_step)
                 if args.save_history:
                     history.append({
                         'epoch': int(epoch),
