@@ -1,0 +1,51 @@
+general:
+  hidden_size: 256
+  actor_hidden_layers: [256, 256]
+  actor_lr: 0.0003
+  critic_lr: 0.0003
+  safety_critic_lr: 0.0003
+  exploration_noise_std: 0.2
+  noise_clip: 0.5
+  policy_target_update_frequency: 2
+  critic_target_update_frequency: 2
+  tau: 0.005
+  qc_ens_size: 4
+  k: 1.0
+  c: 10.0
+  min_pool_size: 1000
+  num_train_repeat: 10
+  max_train_repeat_per_step: 5
+  policy_train_batch_size: 256
+  init_exploration_steps: 5000
+  replay_size: 1000000
+  dem_action_noise_decay: 1.0
+  dem_action_noise_min: 0.05
+  dem_log_std_clip: [-5.0, 2.0]
+  dem_use_entropy_regularization: false
+  dem_entropy_coef: 0.0
+  dem_lam_lr: 0.0003
+  dem_actor_weight_decay: 0.0
+  dem_exploration_schedule:
+    type: constant
+    initial: 1.0
+  device: auto
+  grad_clip_norm: null
+  policy_update_delay: 1
+  deterministic_eval: true
+environments:
+  Safexp-CarButton1-v0:
+    exploration_noise_std: 0.25
+    dem_exploration_schedule:
+      type: linear_decay
+      initial: 1.0
+      final: 0.1
+      steps: 200000
+    actor_lr: 0.0003
+    critic_lr: 0.0003
+    safety_critic_lr: 0.0003
+    policy_target_update_frequency: 2
+    critic_target_update_frequency: 2
+    tau: 0.005
+    qc_ens_size: 4
+    k: 1.0
+    c: 10.0
