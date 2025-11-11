@@ -17,8 +17,7 @@ from sampler.safetygym_env_sampler import SafetygymEnvSampler
 
 # Agents
 from agents.cal.cal import CALAgent
-from agents.qsm.qsm import QSMAgent
-from agents.ssm.ssm import SSMAgent
+from agents.algd.algd import ALGDAgent
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -161,10 +160,8 @@ def main(args):
     # Initialize agent based on args.agent
     if args.agent.lower() == 'cal':
         agent = CALAgent(s_dim, env.action_space, args)
-    elif args.agent.lower() == 'qsm':
-        agent = QSMAgent(s_dim, env.action_space, args)
-    elif args.agent.lower() == 'ssm':
-        agent = SSMAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'algd':
+        agent = ALGDAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 
@@ -176,8 +173,11 @@ def main(args):
         env_sampler = SafetygymEnvSampler(args, env)
     else:
         env_sampler = MuJoCoEnvSampler(args, env)
-
-    train(args, env_sampler, agent, pool, writer=None)
+    
+    if args.use_tensorboard:
+        train(args, env_sampler, agent, pool, writer=writer)
+    else:
+        train(args, env_sampler, agent, pool, writer=None)
 
     if args.use_tensorboard:
         writer.close()

@@ -6,9 +6,9 @@ python main.py --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_test
 
 ### CarButton1
 
-python main.py --agent ssm --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm --num_epoch 375 --cuda --use_tensorboard --save_history
+python main.py --agent cal --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_cal --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
 
-python main.py --agent ssm --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_ssm --num_epoch 375 --cuda
+python main.py --agent algd --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_algd --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
 
 ### CarButton2
 

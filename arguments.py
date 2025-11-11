@@ -4,8 +4,8 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'qsm', 'ssm'],
-                    help="Select which agent to use: ['cal', 'qsm', 'ssm']")
+                    choices=['cal', 'algd'],
+                    help="Select which agent to use: ['cal', 'algd']")
 
     # ----------------------Env Config------------------------
     parser.add_argument('--env_name', default='Hopper-v3')
@@ -59,33 +59,27 @@ def readParser():
     parser.add_argument('--max_train_repeat_per_step', type=int, default=5)
     parser.add_argument('--policy_train_batch_size', type=int, default=256)
     
-    # ============================================================
-    # QSM / SSM Specific Config
-    # ============================================================
-    parser.add_argument('--T', type=int, default=20,
-                        help='Number of diffusion timesteps (for DDPM)')
-    parser.add_argument('--M_q', type=float, default=1.0,
-                        help='Scaling factor for Q-score matching')
-    parser.add_argument('--ddpm_temperature', type=float, default=1.0,
-                        help='Noise temperature in DDPM sampling')
-    parser.add_argument('--beta_schedule', type=str, default='cosine',
-                        choices=['cosine', 'vp', 'linear'],
-                        help='Beta schedule type for diffusion process')
-    parser.add_argument('--time_dim', type=int, default=16,
-                        help='Dimension of Fourier time embeddings')
+    # ======== ALGD / Diffusion Policy ========
+    parser.add_argument('--diffusion_K', type=int, default=50,
+        help='Number of reverse diffusion steps K (default: 30)')
 
-    # ============================================================
-    # SSM-specific safety parameters
-    # ============================================================
-    parser.add_argument('--ensemble_size', type=int, default=4,
-                        help='Number of ensemble networks for safety critic Q_h')
-    parser.add_argument('--safe_threshold', type=float, default=0.0,
-                        help='Safe set threshold: Q_h(s,a) <= threshold is safe')
-    parser.add_argument('--alpha_sm', type=float, default=1.0,
-                        help='Scaling for gradient inside safe region')
-    parser.add_argument('--beta_sm', type=float, default=1.5,
-                        help='Scaling for gradient outside safe region')
+    parser.add_argument('--sigma_min', type=float, default=0.01,
+        help='Minimum noise level for diffusion policy')
+    parser.add_argument('--sigma_max', type=float, default=1.0,
+        help='Maximum noise level for diffusion policy')
 
-    return parser.parse_args()
+    parser.add_argument('--n_mc', type=int, default=4,
+        help='Monte Carlo samples per score matching update')
+    parser.add_argument('--beta', type=float, default=0.01,
+        help='Temperature for importance weighting in score matching')
+
+    parser.add_argument('--t_dim', type=int, default=64,
+        help='Time embedding feature dimension for score network')
+
+    parser.add_argument('--diffusion_step_scale', type=float, default=1.0,
+        help='Step scale for diffusion discretization (for stability)')
+
+    parser.add_argument('--deterministic_eval', action='store_true', default=False,
+        help='No noise sampling in reverse diffusion during evaluation')
 
     return parser.parse_args()
