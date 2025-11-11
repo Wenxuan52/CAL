@@ -21,9 +21,21 @@ def get_timestep_embedding(timesteps: torch.Tensor, embedding_dim: int) -> torch
 class ScoreNetwork(nn.Module):
     """Score network for diffusion-based policy."""
 
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, time_embed_dim: int) -> None:
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        hidden_dim: int,
+        hidden_layers: int,
+        time_embed_dim: int,
+        time_embed_type: str = "sinusoidal",
+    ) -> None:
         super().__init__()
+        if hidden_layers < 1:
+            raise ValueError("ScoreNetwork requires at least one hidden layer")
+
         self.time_embed_dim = time_embed_dim
+        self.time_embed_type = time_embed_type
 
         self.time_mlp = nn.Sequential(
             nn.Linear(time_embed_dim, time_embed_dim),
@@ -32,14 +44,15 @@ class ScoreNetwork(nn.Module):
             nn.SiLU(),
         )
 
+        layers = []
         input_dim = state_dim + action_dim + time_embed_dim
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, action_dim),
-        )
+        last_dim = input_dim
+        for _ in range(hidden_layers):
+            layers.append(nn.Linear(last_dim, hidden_dim))
+            layers.append(nn.SiLU())
+            last_dim = hidden_dim
+        layers.append(nn.Linear(last_dim, action_dim))
+        self.net = nn.Sequential(*layers)
 
         self.apply(self._init_weights)
 
@@ -54,7 +67,12 @@ class ScoreNetwork(nn.Module):
             tau = tau.unsqueeze(-1)
         elif tau.dim() > 2:
             tau = tau.reshape(tau.size(0), -1)
-        time_embed = get_timestep_embedding(tau.squeeze(-1), self.time_embed_dim)
+        if self.time_embed_type == "sinusoidal":
+            time_embed = get_timestep_embedding(tau.squeeze(-1), self.time_embed_dim)
+        elif self.time_embed_type == "identity":
+            time_embed = tau.expand(-1, self.time_embed_dim)
+        else:
+            raise ValueError(f"Unsupported time embedding type: {self.time_embed_type}")
         time_embed = self.time_mlp(time_embed)
         x = torch.cat([state, action, time_embed], dim=-1)
         return self.net(x)
