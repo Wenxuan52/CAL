@@ -4,7 +4,7 @@ def readParser():
     parser = argparse.ArgumentParser(description='CAL')
     # ---------------------Agent Config-----------------------
     parser.add_argument('--agent', default='cal', type=str,
-                    choices=['cal', 'algd'],
+                    choices=['cal', 'algd', 'dem'],
                     help="Select which agent to use: ['cal', 'algd']")
 
     # ----------------------Env Config------------------------
