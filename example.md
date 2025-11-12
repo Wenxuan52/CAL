@@ -10,6 +10,8 @@ python main.py --agent cal --env_name Safexp-CarButton1-v0 --experiment_name car
 
 python main.py --agent algd --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_algd_new --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
 
+python main.py --agent dem --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_dem --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
+
 ### CarButton2
 
 python main.py --env_name Safexp-CarButton2-v0 --experiment_name carbutton2_test --num_epoch 750 --cuda --use_tensorboard --save_parameters --save_history
