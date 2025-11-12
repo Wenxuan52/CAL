@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 
-from dem.energies.base_energy_function import BaseEnergyFunction
-from dem.models.components.clipper import Clipper
-from dem.models.components.noise_schedules import BaseNoiseSchedule
+from agents.dem.energies.base_energy_function import BaseEnergyFunction
+from agents.dem.models.components.clipper import Clipper
+from agents.dem.models.components.noise_schedules import BaseNoiseSchedule
 
 
 def wrap_for_richardsons(score_estimator):

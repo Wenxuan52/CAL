@@ -18,6 +18,8 @@ from sampler.safetygym_env_sampler import SafetygymEnvSampler
 # Agents
 from agents.cal.cal import CALAgent
 from agents.algd.algd import ALGDAgent
+from agents.dem import DEMAgent
+from agents.dem.config import apply_dem_config_to_args, load_dem_config
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -162,6 +164,8 @@ def main(args):
         agent = CALAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'algd':
         agent = ALGDAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'dem':
+        agent = DEMAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 
@@ -192,6 +196,9 @@ if __name__ == '__main__':
         args.constraint_type = 'safetygym'
         args.safetygym = True
         args.epoch_length = 400
+    if args.agent.lower() == 'dem':
+        dem_cfg = load_dem_config(args.env_name)
+        apply_dem_config_to_args(args, dem_cfg)
     args.cost_lim = get_threshold(args.env_name, constraint=args.constraint_type)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_num
     args.seed = torch.randint(0, 10000, (1,)).item()

@@ -3,9 +3,18 @@ from typing import Optional
 
 import numpy as np
 import torch
-from pytorch_lightning.loggers import WandbLogger
+try:  # pragma: no cover - optional dependency
+    from lightning.pytorch.loggers import WandbLogger  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - fallback when Lightning isn't installed
+    try:
+        from pytorch_lightning.loggers import WandbLogger  # type: ignore
+    except ModuleNotFoundError:
+        class WandbLogger:  # type: ignore
+            """Fallback stub used when Lightning loggers are unavailable."""
 
-from dem.models.components.replay_buffer import ReplayBuffer
+            pass
+
+from agents.dem.models.components.replay_buffer import ReplayBuffer
 
 
 class BaseEnergyFunction(ABC):

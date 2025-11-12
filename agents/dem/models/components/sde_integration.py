@@ -3,9 +3,9 @@ from contextlib import contextmanager
 import numpy as np
 import torch
 
-from dem.energies.base_energy_function import BaseEnergyFunction
-from dem.models.components.sdes import VEReverseSDE
-from dem.utils.data_utils import remove_mean
+from agents.dem.energies.base_energy_function import BaseEnergyFunction
+from agents.dem.models.components.sdes import VEReverseSDE
+from agents.dem.utils.data_utils import remove_mean
 
 
 @contextmanager

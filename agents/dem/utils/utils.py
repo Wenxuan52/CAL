@@ -4,9 +4,10 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from omegaconf import DictConfig
 
-from dem.utils import pylogger, rich_utils
+from agents.dem.utils.pylogger import RankedLogger
+from agents.dem.utils import rich_utils
 
-log = pylogger.RankedLogger(__name__, rank_zero_only=True)
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 def extras(cfg: DictConfig) -> None:

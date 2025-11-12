@@ -14,8 +14,8 @@ from torchdiffeq import odeint
 from torchdyn.core import NeuralODE
 from torchmetrics import MeanMetric
 
-from dem.energies.base_energy_function import BaseEnergyFunction
-from dem.utils.logging_utils import fig_to_image
+from agents.dem.energies.base_energy_function import BaseEnergyFunction
+from agents.dem.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
 from .components.cnf import CNF

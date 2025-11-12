@@ -7,11 +7,9 @@ import PIL
 import torch
 from bgflow import MultiDoubleWellPotential
 from hydra.utils import get_original_cwd
-from lightning.pytorch.loggers import WandbLogger
-
-from dem.energies.base_energy_function import BaseEnergyFunction
-from dem.models.components.replay_buffer import ReplayBuffer
-from dem.utils.data_utils import remove_mean
+from agents.dem.energies.base_energy_function import BaseEnergyFunction, WandbLogger
+from agents.dem.models.components.replay_buffer import ReplayBuffer
+from agents.dem.utils.data_utils import remove_mean
 
 
 class MultiDoubleWellEnergy(BaseEnergyFunction):

@@ -2,12 +2,11 @@ from io import BytesIO
 from typing import Any, Dict
 
 import PIL
-from lightning_utilities.core.rank_zero import rank_zero_only
 from omegaconf import OmegaConf
 
-from dem.utils import pylogger
+from agents.dem.utils.pylogger import RankedLogger, rank_zero_only
 
-log = pylogger.RankedLogger(__name__, rank_zero_only=True)
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 @rank_zero_only
