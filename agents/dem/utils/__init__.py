@@ -1,7 +1,5 @@
 """Utility helpers for the DEM agent without Lightning dependencies."""
 
-from __future__ import annotations
-
 from typing import Any, Dict
 
 from agents.dem.utils.pylogger import RankedLogger, rank_prefixed_message, rank_zero_only
