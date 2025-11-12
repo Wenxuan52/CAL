@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from dem.utils.data_utils import remove_mean
+from agents.dem.utils.data_utils import remove_mean
 
 
 class EGNN_dynamics(nn.Module):

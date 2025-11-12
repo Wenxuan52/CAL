@@ -19,9 +19,9 @@ from torchcfm.conditional_flow_matching import (
 from torchmetrics import MeanMetric
 from tqdm import tqdm
 
-from dem.energies.base_energy_function import BaseEnergyFunction
-from dem.utils.data_utils import remove_mean
-from dem.utils.logging_utils import fig_to_image
+from agents.dem.energies.base_energy_function import BaseEnergyFunction
+from agents.dem.utils.data_utils import remove_mean
+from agents.dem.utils.logging_utils import fig_to_image
 
 from .components.clipper import Clipper
 from .components.cnf import CNF
