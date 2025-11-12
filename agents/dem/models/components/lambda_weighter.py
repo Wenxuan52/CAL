@@ -17,7 +17,12 @@ class BasicLambdaWeighter(BaseLambdaWeighter):
         self.epsilon = epsilon
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        return self.noise_schedule.h(t) + self.epsilon
+        value = self.noise_schedule.h(t)
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value, device=t.device, dtype=t.dtype)
+        else:
+            value = value.to(device=t.device, dtype=t.dtype)
+        return value + self.epsilon
 
 
 class NoLambdaWeighter(BasicLambdaWeighter):

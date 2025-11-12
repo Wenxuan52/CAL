@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -27,9 +25,30 @@ class ExplorationSchedule:
 
 
 @dataclass
+class NoiseScheduleConfig:
+    type: str = "geometric"
+    beta: float = 1.0
+    sigma_min: float = 0.1
+    sigma_max: float = 1.0
+    power: float = 2.0
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "NoiseScheduleConfig":
+        if data is None:
+            return cls()
+        return cls(
+            type=data.get("type", "geometric"),
+            beta=float(data.get("beta", 1.0)),
+            sigma_min=float(data.get("sigma_min", 0.1)),
+            sigma_max=float(data.get("sigma_max", 1.0)),
+            power=float(data.get("power", 2.0)),
+        )
+
+
+@dataclass
 class DEMAgentConfig:
     hidden_size: int
-    actor_hidden_layers: tuple
+    actor_hidden_layers: Tuple[int, ...]
     actor_lr: float
     critic_lr: float
     safety_critic_lr: float
@@ -49,12 +68,27 @@ class DEMAgentConfig:
     replay_size: int
     dem_action_noise_decay: float
     dem_action_noise_min: float
-    dem_log_std_clip: tuple
+    dem_log_std_clip: Tuple[float, float]
     dem_use_entropy_regularization: bool
     dem_entropy_coef: float
     dem_lam_lr: float
     dem_actor_weight_decay: float
     dem_exploration_schedule: ExplorationSchedule
+    dem_noise_schedule: NoiseScheduleConfig
+    dem_score_hidden_size: int
+    dem_score_hidden_layers: int
+    dem_score_time_layers: int
+    dem_score_lr: float
+    dem_num_integration_steps: int
+    dem_time_range: float
+    dem_prior_std: float
+    dem_diffusion_scale: float
+    dem_eval_diffusion_scale: float
+    dem_lambda_epsilon: float
+    dem_negative_time: bool
+    dem_negative_time_steps: int
+    dem_energy_regularization: float
+    dem_action_penalty: float
     device: Optional[str]
     grad_clip_norm: Optional[float]
     policy_update_delay: int
@@ -63,6 +97,7 @@ class DEMAgentConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DEMAgentConfig":
         schedule = ExplorationSchedule.from_dict(data.get("dem_exploration_schedule"))
+        noise_schedule = NoiseScheduleConfig.from_dict(data.get("dem_noise_schedule"))
         log_std_clip = data.get("dem_log_std_clip", [-5.0, 2.0])
         return cls(
             hidden_size=int(data.get("hidden_size", 256)),
@@ -92,6 +127,21 @@ class DEMAgentConfig:
             dem_lam_lr=float(data.get("dem_lam_lr", data.get("actor_lr", 3e-4))),
             dem_actor_weight_decay=float(data.get("dem_actor_weight_decay", 0.0)),
             dem_exploration_schedule=schedule,
+            dem_noise_schedule=noise_schedule,
+            dem_score_hidden_size=int(data.get("dem_score_hidden_size", data.get("hidden_size", 256))),
+            dem_score_hidden_layers=int(data.get("dem_score_hidden_layers", 3)),
+            dem_score_time_layers=int(data.get("dem_score_time_layers", 2)),
+            dem_score_lr=float(data.get("dem_score_lr", data.get("actor_lr", 3e-4))),
+            dem_num_integration_steps=int(data.get("dem_num_integration_steps", 32)),
+            dem_time_range=float(data.get("dem_time_range", 1.0)),
+            dem_prior_std=float(data.get("dem_prior_std", 1.0)),
+            dem_diffusion_scale=float(data.get("dem_diffusion_scale", 1.0)),
+            dem_eval_diffusion_scale=float(data.get("dem_eval_diffusion_scale", 0.0)),
+            dem_lambda_epsilon=float(data.get("dem_lambda_epsilon", 1e-3)),
+            dem_negative_time=bool(data.get("dem_negative_time", False)),
+            dem_negative_time_steps=int(data.get("dem_negative_time_steps", 0)),
+            dem_energy_regularization=float(data.get("dem_energy_regularization", 0.0)),
+            dem_action_penalty=float(data.get("dem_action_penalty", 0.0)),
             device=data.get("device"),
             grad_clip_norm=(None if data.get("grad_clip_norm") is None else float(data["grad_clip_norm"])),
             policy_update_delay=int(data.get("policy_update_delay", 1)),

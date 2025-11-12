@@ -28,6 +28,26 @@ general:
   dem_exploration_schedule:
     type: constant
     initial: 1.0
+  dem_noise_schedule:
+    type: geometric
+    sigma_min: 0.1
+    sigma_max: 1.0
+    beta: 1.0
+    power: 2.0
+  dem_score_hidden_size: 256
+  dem_score_hidden_layers: 3
+  dem_score_time_layers: 2
+  dem_score_lr: 0.0003
+  dem_num_integration_steps: 32
+  dem_time_range: 1.0
+  dem_prior_std: 1.0
+  dem_diffusion_scale: 1.0
+  dem_eval_diffusion_scale: 0.0
+  dem_lambda_epsilon: 0.0001
+  dem_negative_time: false
+  dem_negative_time_steps: 0
+  dem_energy_regularization: 0.0
+  dem_action_penalty: 0.0
   device: auto
   grad_clip_norm: null
   policy_update_delay: 1
