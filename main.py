@@ -163,7 +163,7 @@ def main(args):
     if args.agent.lower() == 'cal':
         agent = CALAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'algd':
-        agent = ALGDAgent(s_dim, env.action_space, args)
+        agent = ALGDAgent(s_dim, env.action_space, args, cost_weight=1.0)
     elif args.agent.lower() == 'dem':
         agent = DEMAgent(s_dim, env.action_space, args)
     else:
