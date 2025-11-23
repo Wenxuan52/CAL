@@ -493,7 +493,10 @@ class ALGDAgent(Agent):
         # ---------
         # Compute φ*(Eq.20): energy-guided score target
         # ---------
-        with torch.no_grad():
+        # need gradients w.r.t. the diffused action to form grad_energy; using
+        # torch.enable_grad() keeps autograd active even if surrounding code
+        # switches it off elsewhere.
+        with torch.enable_grad():
             grad_energy = self.policy.compute_grad_energy(
                 state_batch, a_tau,
                 critic=self.critic,
@@ -502,7 +505,10 @@ class ALGDAgent(Agent):
                 target_cost=self.target_cost
             )
 
-            phi_star = - a_tau / sigma_k**2 - grad_energy / self.beta
+            # phi_star serves as a target only; detach to avoid leaking
+            # gradients back into critics or lambda parameters during actor
+            # optimisation.
+            phi_star = (- a_tau / sigma_k**2 - grad_energy / self.beta).detach()
 
         # ---------
         # Predicted score φθ
