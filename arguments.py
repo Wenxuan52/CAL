@@ -59,4 +59,16 @@ def readParser():
     parser.add_argument('--max_train_repeat_per_step', type=int, default=5)
     parser.add_argument('--policy_train_batch_size', type=int, default=256)
 
+    # ------------------- ALGD --------
+    parser.add_argument('--algd_score_coef', type=float, default=0.1,
+                        help='weight for score matching regularization in ALGD agent')
+    parser.add_argument('--algd_score_sigma_min', type=float, default=0.1,
+                        help='minimum diffusion noise level for ALGD score matching')
+    parser.add_argument('--algd_score_sigma_max', type=float, default=1.0,
+                        help='maximum diffusion noise level for ALGD score matching')
+    parser.add_argument('--algd_diffusion_steps', type=int, default=5,
+                        help='number of diffusion sampling steps for ALGD policy')
+    parser.add_argument('--algd_langevin_scale', type=float, default=0.5,
+                        help='step size scale for Langevin dynamics during ALGD diffusion sampling')
+
     return parser.parse_args()
