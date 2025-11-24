@@ -58,37 +58,5 @@ def readParser():
     parser.add_argument('--min_pool_size', type=int, default=1000)
     parser.add_argument('--max_train_repeat_per_step', type=int, default=5)
     parser.add_argument('--policy_train_batch_size', type=int, default=256)
-    
-    # ======== ALGD / Diffusion Policy ========
-    parser.add_argument('--diffusion_K', type=int, default=30,
-        help='Number of reverse diffusion steps K (default: 30)')
-
-    parser.add_argument('--sigma_min', type=float, default=0.01,
-        help='Minimum noise level for diffusion policy')
-    parser.add_argument('--sigma_max', type=float, default=0.05,
-        help='Maximum noise level for diffusion policy')
-
-    parser.add_argument('--n_mc', type=int, default=4,
-        help='Monte Carlo samples per score matching update')
-    parser.add_argument('--beta', type=float, default=1.0,
-        help='Temperature for importance weighting in score matching')
-
-    parser.add_argument('--score_hidden_layers', type=int, default=3,
-        help='Number of hidden layers in the diffusion score network')
-
-    parser.add_argument('--t_dim', type=int, default=128,
-        help='Time embedding feature dimension (emb_size) for the diffusion score network')
-
-    parser.add_argument('--time_embedding', type=str, default='sinusoidal', choices=['sinusoidal', 'identity'],
-        help='Embedding type used to encode diffusion timesteps')
-
-    parser.add_argument('--diffusion_step_scale', type=float, default=1.0,
-        help='Step scale for diffusion discretization (for stability)')
-
-    parser.add_argument('--deterministic_eval', action='store_true', default=False,
-        help='No noise sampling in reverse diffusion during evaluation')
-    
-    parser.add_argument('--algd_warmup_steps', type=int, default=0,
-        help='Number of environment steps to follow the Gaussian CAL policy before switching to diffusion')
 
     return parser.parse_args()
