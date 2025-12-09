@@ -1,0 +1,13 @@
+v1是直接在CAL基础上换成Diffusion Policy (model_v1)
+v2是更换成Augmented Lag (model_v1)
+v3是加入score loss (model_v1)
+v4是去噪时按照伪算法加入guidance (model_v2)
+v5是多tau以及蒙特卡洛采样 (model_v3)
+
+(1.0, 0.1)
+参数实验组合：
+(0.2,1.0)
+(0.2,10.0)
+(0.0,5.0)
+
+v6去噪过程完全符合SDE公式 (model_v4)
