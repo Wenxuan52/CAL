@@ -17,9 +17,10 @@ from sampler.safetygym_env_sampler import SafetygymEnvSampler
 
 # Agents
 from agents.cal.cal import CALAgent
-from agents.algd.algd import ALGDAgent
-from agents.dem import DEMAgent
-from agents.dem.config import apply_dem_config_to_args, load_dem_config
+from agents.algd.algd_v5 import ALGDAgent
+from agents.saclag.saclag import SACLagAgent
+from agents.sacauglag.sacauglag import SACAugLagAgent
+from agents.hardhjb.hardhjb import HJBAgent
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -67,12 +68,40 @@ def train(args, env_sampler, agent, pool, writer=None):
                 if args.use_tensorboard and writer is not None:
                     writer.add_scalar('Eval/return', test_reward, total_step)
                     writer.add_scalar('Eval/cost', test_cost, total_step)
+                    if hasattr(agent, "get_last_log"):
+                        last = agent.get_last_log()
+                        if "score_mc_time_n" in last and last["score_mc_time_n"] > 0:
+                            print(
+                                f"[MC-Time] N={last.get('score_mc_samples', 'NA')} "
+                                f"mean={last.get('score_mc_time_ms_mean', float('nan')):.3f}ms "
+                                f"std={last.get('score_mc_time_ms_std', float('nan')):.3f}ms "
+                                f"(n={last.get('score_mc_time_n', 0)})"
+                            )
+                        if "lambda" in last:
+                            writer.add_scalar("Train/lambda", last["lambda"], total_step)
+                        if "violation_mean" in last:
+                            writer.add_scalar("Train/violation_mean", last["violation_mean"], total_step)
+                
                 if args.save_history:
-                    history.append({
+                    row = {
                         "step": total_step,
                         "return": float(test_reward),
-                        "cost": float(test_cost)
-                    })
+                        "cost": float(test_cost),
+                    }
+                    
+                    # Extra information on lambda
+                    # 1) 如果 agent 提供 last_log（推荐做法），就把里面的字段并进来
+                    if hasattr(agent, "get_last_log"):
+                        row.update(agent.get_last_log())
+
+                    # 2) 兜底：至少把 lambda 记下来（如果 agent 有 lam 属性）
+                    if hasattr(agent, "lam"):
+                        try:
+                            row["lambda"] = float(agent.lam.item())
+                        except Exception:
+                            row["lambda"] = float(agent.lam)
+
+                    history.append(row)
             
         epoch += 1
 
@@ -164,8 +193,12 @@ def main(args):
         agent = CALAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'algd':
         agent = ALGDAgent(s_dim, env.action_space, args)
-    elif args.agent.lower() == 'dem':
-        agent = DEMAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'saclag':
+        agent = SACLagAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'sacauglag':
+        agent = SACAugLagAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'hjb':
+        agent = HJBAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 
@@ -188,17 +221,37 @@ def main(args):
 
 
 if __name__ == '__main__':
-    from arguments import readParser
     from env.constraints import get_threshold
     import safety_gym
+    
+    import argparse
+    base_parser = argparse.ArgumentParser()
+    base_parser.add_argument("--agent", type=str, required=True)
+    base_parser.add_argument("--env_name", type=str, required=True)
+    
+    base_args, _ = base_parser.parse_known_args()
+
+    # 根据 agent 加载其专用 parser
+    if base_args.agent.lower() == "cal" or base_args.agent.lower() == "algd":
+        from configs.cal import CALParser as readParser
+    elif base_args.agent.lower() == "saclag":
+        from configs.saclag import SACLagParser as readParser
+    elif base_args.agent.lower() == "sacauglag":
+        from configs.sacauglag import SACAugLagParser as readParser
+    elif base_args.agent.lower() == "hjb":
+        from configs.hardhjb import HJBParser as readParser
+    else:
+        raise ValueError(f"Unknown agent type: {base_args.agent}")
+    
     args = readParser()
     if 'Safe' in args.env_name: # safetygym
         args.constraint_type = 'safetygym'
         args.safetygym = True
         args.epoch_length = 400
-    if args.agent.lower() == 'dem':
-        dem_cfg = load_dem_config(args.env_name)
-        apply_dem_config_to_args(args, dem_cfg)
+    
+    print(args.qc_ens_size)
+    print(args.M)
+    
     args.cost_lim = get_threshold(args.env_name, constraint=args.constraint_type)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_num
     args.seed = torch.randint(0, 10000, (1,)).item()

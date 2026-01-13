@@ -29,7 +29,7 @@ class ALGDAgent(Agent):
         self.c = args.c
         self.cost_lr_scale = 1.
         
-        self.rho = getattr(args, "rho", 1.0)
+        self.rho = getattr(args, "rho", 4.0) ##### 1.0
         self.T = getattr(args, "diffusion_T", 5)
        
         self.actor_loss_coef = getattr(args, "actor_loss_coef", 1.0)
@@ -37,11 +37,14 @@ class ALGDAgent(Agent):
         
         # ====== Step4-B: score matching 的 MC 超参 ======
         # 每个 (s, a^τ, τ) 周围采多少个 a^{0,(i)}
-        self.score_mc_samples = getattr(args, "score_mc_samples", 4)
+        self.score_mc_samples = getattr(args, "score_mc_samples", 4) # 4
         # MC 里高斯扰动的尺度系数: σ(τ) = sigma_scale * sqrt(1 - ᾱ_τ)
         self.score_sigma_scale = getattr(args, "score_sigma_scale", 1.0)
         # softmax 温度 β：w_i ∝ exp( -L_A / β )
         self.score_beta = getattr(args, "score_beta", 1.0)
+        
+        # comparison 实验
+        self.use_aug_lag = getattr(args, "use_aug_lag", True)
 
         # Reward critic
         self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
@@ -90,10 +93,57 @@ class ALGDAgent(Agent):
         else:
             self.target_cost = args.cost_lim
         print("Constraint Budget: ", self.target_cost)
+        
+        # ====== profiling: score_mc time ======
+        self.profile_score_mc = getattr(args, "profile_score_mc", True)
+        self.profile_warmup = getattr(args, "profile_warmup", 50)   # 前 50 次不计（避开cuda热身）
+        self.profile_every = getattr(args, "profile_every", 1)      # 每隔几次记录一次
+        self._mc_prof_step = 0
+
+        # Welford online stats for ms
+        self._mc_time_n = 0
+        self._mc_time_mean = 0.0
+        self._mc_time_M2 = 0.0
+    
+    def _welford_update(self, x_ms: float):
+        self._mc_time_n += 1
+        delta = x_ms - self._mc_time_mean
+        self._mc_time_mean += delta / self._mc_time_n
+        delta2 = x_ms - self._mc_time_mean
+        self._mc_time_M2 += delta * delta2
+
+    def get_score_mc_time_stats(self):
+        if self._mc_time_n < 2:
+            return {"n": self._mc_time_n, "mean_ms": self._mc_time_mean, "var_ms2": 0.0, "std_ms": 0.0}
+        var = self._mc_time_M2 / (self._mc_time_n - 1)
+        return {"n": self._mc_time_n, "mean_ms": self._mc_time_mean, "var_ms2": var, "std_ms": var ** 0.5}
+
 
     @property
     def lam(self):
         return self.log_lam.exp()
+    
+    def get_last_log(self):
+        return getattr(self, "last_log", {})
+    
+    def compute_L(self, state, action):
+        """
+        Standard Lagrangian:
+        L(s,a,λ) = -min_j Q_j(s,a) + λ * (Qc_risk(s,a) - h)
+        """
+        Q1, Q2 = self.critic(state, action)
+        Q_min = torch.min(Q1, Q2)
+
+        QCs = self.safety_critics(state, action)
+        qc_std, qc_mean = torch.std_mean(QCs, dim=0)
+        if self.args.qc_ens_size == 1:
+            qc_std = torch.zeros_like(qc_mean).to(self.device)
+        qc_risk = qc_mean + self.args.k * qc_std
+
+        lam = self.lam
+        h = self.target_cost
+        L = -Q_min + lam * (qc_risk - h)
+        return L, Q_min, qc_risk
     
     def compute_LA(self, state, action):
         """
@@ -126,6 +176,12 @@ class ALGDAgent(Agent):
         LA = -Q_min + penalty
         return LA, Q_min, qc_risk
     
+    def compute_energy(self, state, action):
+        if self.use_aug_lag:
+            return self.compute_LA(state, action)
+        else:
+            return self.compute_L(state, action)
+    
     def compute_score_target(self, state, action):
         """
         简化版 ALGD 目标 score φ*：
@@ -140,7 +196,7 @@ class ALGDAgent(Agent):
         action_for_grad.requires_grad_(True)
 
         # 2) 计算 L_A(s,a)
-        LA, Q_min, qc_risk = self.compute_LA(state, action_for_grad)
+        LA, Q_min, qc_risk = self.compute_energy(state, action_for_grad)
 
         # 3) 对 a 求梯度：∇_a sum_i L_A(s_i, a_i)
         grad_a = torch.autograd.grad(
@@ -172,6 +228,19 @@ class ALGDAgent(Agent):
         输出:
             phi_star: [B, act_dim]
         """
+        ##############
+        do_profile = self.profile_score_mc and state.is_cuda
+        if do_profile:
+            self._mc_prof_step += 1
+            should_record = (self._mc_prof_step > self.profile_warmup) and (self._mc_prof_step % self.profile_every == 0)
+            if should_record:
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                torch.cuda.synchronize()
+                start.record()
+        ##############
+
+        
         B, act_dim = a_tau.shape
         N = self.score_mc_samples
         device = state.device
@@ -195,7 +264,7 @@ class ALGDAgent(Agent):
         a0_samples_flat.requires_grad_(True)
 
         # --------- 计算 L_A 和梯度 ∇_a L_A ----------
-        LA_flat, _, _ = self.compute_LA(state_exp, a0_samples_flat)        # [B*N, 1]
+        LA_flat, _, _ = self.compute_energy(state_exp, a0_samples_flat)        # [B*N, 1]
         grad_a_flat = torch.autograd.grad(
             outputs=LA_flat.sum(),
             inputs=a0_samples_flat,
@@ -219,6 +288,14 @@ class ALGDAgent(Agent):
 
         # 不让梯度回流到 critics，只作为监督信号
         phi_star = phi_star.detach()
+        
+        ##############
+        if do_profile and should_record:
+            end.record()
+            torch.cuda.synchronize()
+            elapsed_ms = start.elapsed_time(end)
+            self._welford_update(float(elapsed_ms))
+        ##############
 
         return phi_star
 
@@ -272,47 +349,12 @@ class ALGDAgent(Agent):
         safety_critic_loss.backward()
         self.safety_critic_optimizer.step()
 
-#     def update_actor(self, state, action_taken):
-#         # 1) 用当前 policy 采样动作
-#         action = self.policy.sample(state)
-
-#         # 2) actor loss = E[L_A]
-#         LA, actor_Q, actor_QC = self.compute_LA(state, action)
-#         actor_loss = LA.mean()
-
-#         # 3) ALGD score matching：φ_theta ≈ -∇_a L_A
-#         #    (简化版：只在 a^0 上做，tau 先固定为 0)
-#         phi_star = self.compute_score_target(state, action)              # [B, act_dim]
-#         phi_theta = self.policy.score(state, action, tau=None)          # [B, act_dim]
-
-#         score_loss = F.mse_loss(phi_theta, phi_star)
-
-#         # 4) 总的 actor loss =  E[L_A] + coeff * MSE
-#         total_loss = actor_loss + self.score_coef * score_loss
-
-#         self.actor_optimizer.zero_grad()
-#         total_loss.backward()
-#         self.actor_optimizer.step()
-
-#         # 5) λ 的更新保持原样（用 action_taken 做）
-#         with torch.no_grad():
-#             current_QCs = self.safety_critics(state, action_taken)
-#             current_std, current_mean = torch.std_mean(current_QCs, dim=0)
-#             if self.args.qc_ens_size == 1:
-#                 current_std = torch.zeros_like(current_mean).to(self.device)
-#             current_QC = current_mean + self.args.k * current_std
-
-#         self.log_lam_optimizer.zero_grad()
-#         lam_loss = torch.mean(self.lam * (self.target_cost - current_QC).detach())
-#         lam_loss.backward()
-#         self.log_lam_optimizer.step()
-
     def update_actor(self, state, action_taken):
         # 1) 用当前 policy 采样动作，并顺便拿到 on-policy 的 (a^τ, τ)
         action, a_tau, tau = self.policy.sample_with_traj(state)
 
         # 2) actor loss = E[L_A]，仍然在最终动作 a^0 上计算
-        LA, actor_Q, actor_QC = self.compute_LA(state, action)
+        LA, actor_Q, actor_QC = self.compute_energy(state, action)
         actor_loss = LA.mean()
 
         # 3) Step4-B: 多 τ + MC φ* 的 score matching
@@ -355,6 +397,23 @@ class ALGDAgent(Agent):
         lam_loss = torch.mean(self.lam * (self.target_cost - current_QC).detach())
         lam_loss.backward()
         self.log_lam_optimizer.step()
+        
+        with torch.no_grad():
+            stats = self.get_score_mc_time_stats()
+            self.last_log = {
+                "lambda": float(self.lam.item()),
+                "log_lambda": float(self.log_lam.item()),
+                "lambda_loss": float(lam_loss.item()),
+                "qc_risk_mean": float(current_QC.mean().item()),
+                "violation_mean": float(torch.clamp(current_QC - self.target_cost, min=0.0).mean().item()),
+                "use_aug_lag": int(self.use_aug_lag),
+                
+                # profiling
+                "score_mc_samples": int(self.score_mc_samples),
+                "score_mc_time_ms_mean": float(stats["mean_ms"]),
+                "score_mc_time_ms_std": float(stats["std_ms"]),
+                "score_mc_time_n": int(stats["n"]),
+            }
 
 
     def update_parameters(self, memory, updates):

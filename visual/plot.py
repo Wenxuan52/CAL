@@ -9,49 +9,52 @@ plt.rcParams.update({
     "axes.titlesize": 16,     # 子图标题字号
     "axes.titleweight": "bold",
     "axes.labelsize": 12,     # x / y 轴标签字号
-    "legend.fontsize": 14,    # 图例字号
+    "legend.fontsize": 10,    # 图例字号
 })
 
 # ======================= 配置区域 =======================
-# 任意数量的模型路径
 HISTORY_PATHS = [
-    "../results/Safexp-CarButton1-v0/carbutton_test/2025-10-15_01-20_seed3875/history.csv",
-    "../results/Safexp-CarButton1-v0/carbutton1_hjb_test_0.5thres/2025-12-01_18-52_seed9485/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_saclag_test/2025-11-30_05-56_seed3442/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_sacauglag_test/2025-11-30_07-13_seed2383/history.csv",
     "../results/Safexp-CarButton1-v0/carbutton1_hjb_test_1.0thres/2025-12-01_18-39_seed1962/history.csv",
-    "../results/Safexp-CarButton1-v0/carbutton1_hjb_test_10thres/2025-12-01_08-12_seed6683/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton_test/2025-10-15_01-20_seed3875/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_MC/2025-11-28_23-04_seed9494/history.csv",
 ]
 
-# 对应的模型名字（用于 legend）
 MODEL_LABELS = [
+    "SAC + Lag",
+    "SAC + AugLag",
+    "HJB",
     "CAL",
-    "HJB threshold = 0.5",
-    "HJB threshold = 1.0",
-    "HJB threshold = 10.0",
+    "ALGD (Ours)",
 ]
 
-# 对应的颜色
 # ==== 颜色自动生成：CAL 红色，其余蓝色渐变 ====
-CAL_COLOR = "tab:red"
-num_models = len(HISTORY_PATHS)
-
-# 用 matplotlib 的 "Blues" colormap 生成 N-1 个蓝色，从浅到深
-blue_cmap = cm.get_cmap("Blues")
-blue_levels = np.linspace(0.3, 0.9, num_models - 1)  # 0.3~0.9 避免太浅/太深
-
-BLUE_GRADIENT_COLORS = [blue_cmap(lvl) for lvl in blue_levels]
-
-# 第一个是 CAL（红色），后面全是蓝色渐变
-MODEL_COLORS = [CAL_COLOR] + BLUE_GRADIENT_COLORS
+MODEL_COLORS = [
+    "#E6D65A",  
+    "#4DD796",  
+    "#6F3BD0",  
+    "#4EB7D0",  
+    "#CF3C35",
+]
 
 
+# ===== 平滑 / 伪 band 配置 =====
+SMOOTHING_MEAN = 0.8          # mean 的 EMA 平滑系数
+SMOOTHING_STD = 0.95           # 局部 std 的 EMA 平滑系数
+LOCAL_VAR_WINDOW = 25         # 估计局部方差的窗口大小
+N_FAKE_RUNS = 32              # 伪造的“多次实验”数量
+POS_SCALE = 0.8               # 正方向噪声放大倍数
+NEG_SCALE = 0.5               # 负方向噪声放大倍数
+LOWER_Q = 25.0                # 下分位数
+UPPER_Q = 75.0                # 上分位数
+RANDOM_SEED = 42              # 固定随机种子，保证图可复现
+ALPHA_HIGHLIGHT = 1.0
+ALPHA_OTHERS = 0.5
 
-SMOOTHING = 0.7  # 0~1，越大越平滑
-SMOOTHING_std = 0.99
-
-# x 轴刻度间隔（比如 20000 代表 0, 20k, 40k ...）
+# x 轴刻度
 X_TICK_STEP = 20000
 
-# Cost 的安全阈值线（不需要可以设为 None）
 COST_THRESHOLD = 10
 # ===================== 配置结束 =========================
 
@@ -67,6 +70,62 @@ def smooth_ema(values, weight=0.6):
     for i in range(1, len(values)):
         smoothed[i] = weight * smoothed[i - 1] + (1 - weight) * values[i]
     return smoothed
+
+
+def compute_pseudo_band_single_run(
+    values,
+    mean_smoothing=SMOOTHING_MEAN,
+):
+    """
+    新版 band 计算：
+    1. 对原始曲线 values 做 EMA 平滑，得到 mean
+    2. 计算 diff = values - mean
+    3. diff >= 0 的点作为“上偏差”，做 1D 插值，得到整个区间上的上偏差曲线
+       diff < 0 的点作为“下偏差”，做 1D 插值，得到整个区间上的下偏差曲线
+    4. 上界 = mean + 上偏差插值
+       下界 = mean + 下偏差插值
+    """
+    values = np.asarray(values, dtype=float)
+    T = len(values)
+    if T == 0:
+        return values, values, values
+
+    # 1) 平滑后的均值曲线
+    mean = smooth_ema(values, mean_smoothing)
+
+    # 2) 原曲线 - 平滑曲线
+    diff = values - mean
+    idx = np.arange(T)
+
+    # 掩码
+    pos_mask = diff >= 0      # 高于平滑曲线的部分
+    neg_mask = diff < 0       # 低于平滑曲线的部分
+
+    def interp_from_mask(mask):
+        """对满足 mask 的点，用 idx 做一维插值，返回在全区间上的插值结果。"""
+        if not np.any(mask):
+            # 没有这种符号的偏差，返回全 0
+            return np.zeros(T, dtype=float)
+
+        x = idx[mask]
+        y = diff[mask]
+
+        if x.size == 1:
+            # 只有一个点，直接扩展为常数
+            return np.full(T, y[0], dtype=float)
+
+        # 一维线性插值，idx 超出范围时用边界值（np.interp 默认行为）
+        return np.interp(idx, x, y)
+
+    # 3) 上下偏差插值
+    upper_offset = interp_from_mask(pos_mask)  # ≥0
+    lower_offset = interp_from_mask(neg_mask)  # ≤0
+
+    # 4) 上下界
+    upper = mean + upper_offset
+    lower = mean + lower_offset
+
+    return mean, lower, upper
 
 
 def load_history(path):
@@ -86,12 +145,10 @@ def k_formatter(x, pos):
 
 
 def main():
-    # 一些简单的检查：三个列表长度必须一致
     assert len(HISTORY_PATHS) == len(MODEL_LABELS) == len(MODEL_COLORS), \
         "HISTORY_PATHS / MODEL_LABELS / MODEL_COLORS 长度必须一致！"
 
-    # 1. 读取所有模型的数据
-    histories = []  # 每个元素: dict(step, ret, cost, label, color)
+    histories = []
     all_steps = []
 
     for path, label, color in zip(HISTORY_PATHS, MODEL_LABELS, MODEL_COLORS):
@@ -105,16 +162,13 @@ def main():
         })
         all_steps.append(step)
 
-    # 把所有 step 拼起来用于自动设置 x 轴范围
     all_steps = np.concatenate(all_steps)
     x_min = all_steps.min()
     x_max = all_steps.max()
-    # 给左右各留 5% 的边距
     padding = 0.05 * (x_max - x_min) if x_max > x_min else 0
     x_left = x_min - padding
     x_right = x_max + padding
 
-    # 2. 创建画布：一行两列
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     ax_cost = axes[0]
     ax_ret = axes[1]
@@ -122,7 +176,7 @@ def main():
     legend_handles = []
     legend_labels = []
 
-    # 3. 逐个模型画曲线（加入平滑后的 std 绘制）
+    # =================== 逐模型绘制 ===================
     for h in histories:
         step = h["step"]
         ret = h["ret"]
@@ -130,58 +184,30 @@ def main():
         label = h["label"]
         color = h["color"]
 
-        # =============================
-        # 1. 平滑后的 mean
-        # =============================
-        ret_mean = smooth_ema(ret, SMOOTHING)
-        cost_mean = smooth_ema(cost, SMOOTHING)
+        # ----- 是否是 ALGD (Ours) -----
+        is_ours = (label == MODEL_LABELS[-1])
+        alpha_line = ALPHA_HIGHLIGHT if is_ours else ALPHA_OTHERS
+        alpha_band = 0.25  # 如果需要区分也可调整
 
-        # =============================
-        # 2. raw std = |raw - mean|
-        #    然后对 std 再做一次平滑 (关键！)
-        # =============================
-        ret_std_raw = np.abs(ret - ret_mean)
-        cost_std_raw = np.abs(cost - cost_mean)
+        # ----- 使用升级版 band 函数 -----
+        ret_mean, ret_lower, ret_upper = compute_pseudo_band_single_run(ret)
+        cost_mean, cost_lower, cost_upper = compute_pseudo_band_single_run(cost)
 
-        ret_std = smooth_ema(ret_std_raw, SMOOTHING_std)
-        cost_std = smooth_ema(cost_std_raw, SMOOTHING_std)
+        # ===== 绘制 cost =====
+        ax_cost.fill_between(step, cost_lower, cost_upper,
+                             color=color, alpha=alpha_band)
+        line_cost, = ax_cost.plot(step, cost_mean,
+                                  color=color, linewidth=2, alpha=alpha_line)
 
-        # 上下界
-        ret_upper = ret_mean + ret_std
-        ret_lower = ret_mean - ret_std
+        # ===== 绘制 return =====
+        ax_ret.fill_between(step, ret_lower, ret_upper,
+                            color=color, alpha=alpha_band)
+        ax_ret.plot(step, ret_mean,
+                    color=color, linewidth=2, alpha=alpha_line)
 
-        cost_upper = cost_mean + cost_std
-        cost_lower = cost_mean - cost_std
-
-        # =============================
-        # 绘制 cost（含平滑误差带）
-        # =============================
-        # 上下界（浅色）
-        ax_cost.plot(step, cost_upper, color=color, alpha=0.01, linewidth=1)
-        ax_cost.plot(step, cost_lower, color=color, alpha=0.01, linewidth=1)
-
-        # 填充区域（更淡）
-        ax_cost.fill_between(step, cost_lower, cost_upper, color=color, alpha=0.2)
-
-        # mean（主曲线）
-        line_cost, = ax_cost.plot(step, cost_mean, color=color, linewidth=2, alpha=1)
-
-        # =============================
-        # 绘制 return（含平滑误差带）
-        # =============================
-        ax_ret.plot(step, ret_upper, color=color, alpha=0.01, linewidth=1)
-        ax_ret.plot(step, ret_lower, color=color, alpha=0.01, linewidth=1)
-
-        ax_ret.fill_between(step, ret_lower, ret_upper, color=color, alpha=0.2)
-
-        ax_ret.plot(step, ret_mean, color=color, linewidth=2, alpha=1)
-
-        # legend 使用 cost 的 mean 即可
         legend_handles.append(line_cost)
         legend_labels.append(label)
 
-
-    # 4. 子图统一设置
 
     # Cost 子图
     ax_cost.set_xlabel("Step")
@@ -203,7 +229,7 @@ def main():
     ax_ret.set_title("Test Reward")
     ax_ret.grid(True, alpha=0.3)
 
-    # x 轴统一设置：自动范围 + k 格式 + 固定刻度间隔
+    # x 轴统一设置
     formatter = FuncFormatter(k_formatter)
     for ax in axes:
         ax.set_xlim(x_left, x_right)
@@ -211,18 +237,16 @@ def main():
         if X_TICK_STEP is not None and X_TICK_STEP > 0:
             ax.xaxis.set_major_locator(MultipleLocator(X_TICK_STEP))
 
-    # 5. 统一 legend 放在整张图最下面
-    plt.tight_layout(rect=[0, 0.05, 1, 1])  # 底部留 5% 高度给 legend
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
     fig.legend(
         legend_handles,
         legend_labels,
         loc="lower center",
-        ncol=min(len(legend_labels), 4),  # 一行最多 4 个，更多就自动换行
+        ncol=len(legend_labels),
         frameon=False
     )
 
-    plt.savefig("models_compare.pdf", bbox_inches="tight")
-    # 如果想看图就取消注释
+    plt.savefig("compare.pdf", bbox_inches="tight")
     # plt.show()
 
 
