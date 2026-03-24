@@ -31,12 +31,12 @@ def CALParser():
 
     # ---------------------Algorithm Config-------------------------
     parser.add_argument('--k', type=float, default=1.0)
-    parser.add_argument('--qc_ens_size', type=int, default=1) #### 4
+    parser.add_argument('--qc_ens_size', type=int, default=4) #### 4
     parser.add_argument('--c', type=float, default=10)
     parser.add_argument('--num_train_repeat', type=int, default=10)
 
     parser.add_argument('--intrgt_max', action='store_true', default=False)
-    parser.add_argument('--M', type=int, default=1, help='this number should be <= qc_ens_size') #### 4
+    parser.add_argument('--M', type=int, default=4, help='this number should be <= qc_ens_size') #### 4
 
     # -------------------Basic Hyperparameters---------------------
     parser.add_argument('--epsilon', default=1e-3)

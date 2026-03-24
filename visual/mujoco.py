@@ -27,7 +27,7 @@ TASK_REWARD_Y_TICK_STEP = {
 MODEL_LABELS = [
     "SAC + Lag",
     "SAC + AugLag",
-    "HJB",
+    "HJ",
     "CAL",
     "ALGD (Ours)",
 ]
@@ -99,14 +99,14 @@ TASK_HISTORY_PATHS = {
     "HalfCheetah": {
         "SAC + Lag":     "../results/HalfCheetah-v3/halfcheetah_saclag/2025-12-14_20-55_seed7802/history_meanstd.csv",
         "SAC + AugLag":  "../results/HalfCheetah-v3/halfcheetah_sacauglag/2025-12-14_21-00_seed2470/history_meanstd.csv",
-        "HJB":           "../results/HalfCheetah-v3/halfcheetah_hjb/2025-12-14_21-30_seed7313/history_meanstd.csv",
+        "HJ":           "../results/HalfCheetah-v3/halfcheetah_hjb/2025-12-14_21-30_seed7313/history_meanstd.csv",
         "CAL":           "../results/HalfCheetah-v3/halfcheetah_cal/2025-12-08_21-38_seed2143/history_meanstd.csv",
         "ALGD (Ours)":   "../results/HalfCheetah-v3/halfcheetah_algd/2025-12-09_11-12_seed1148/history_meanstd.csv",
     },
     "Hopper": {
         "SAC + Lag":     "../results/Hopper-v3/hopper_saclag/2025-12-15_00-41_seed7959/history_meanstd.csv",
         "SAC + AugLag":  "../results/Hopper-v3/hopper_sacauglag/2025-12-15_00-55_seed1927/history_meanstd.csv",
-        "HJB":           "../results/Hopper-v3/hopper_hjb/2025-12-15_00-58_seed8171/history_meanstd.csv",
+        "HJ":           "../results/Hopper-v3/hopper_hjb/2025-12-15_00-58_seed8171/history_meanstd.csv",
         "CAL":           "../results/Hopper-v3/hopper_cal/2025-12-07_07-23_seed2031/history_meanstd.csv",
         # "ALGD (Ours)":   "../results/Hopper-v3/hopper_algd/2025-12-08_03-21_seed1538/history_meanstd.csv",
         "ALGD (Ours)":   "temp_history/hopper_history_meanstd.csv",
@@ -114,14 +114,14 @@ TASK_HISTORY_PATHS = {
     "Ant": {
         "SAC + Lag":     "../results/Ant-v3/ant_saclag/2025-12-16_04-07_seed6873/history_meanstd.csv",
         "SAC + AugLag":  "../results/Ant-v3/ant_sacauglag/2025-12-16_04-38_seed8165/history_meanstd.csv",
-        "HJB":           "../results/Ant-v3/ant_hjb/2025-12-16_04-45_seed6818/history_meanstd.csv",
+        "HJ":           "../results/Ant-v3/ant_hjb/2025-12-16_04-45_seed6818/history_meanstd.csv",
         "CAL":           "../results/Ant-v3/ant_cal/2025-12-10_13-24_seed3809/history_meanstd.csv",
         "ALGD (Ours)":   "../results/Ant-v3/ant_algd/2025-12-11_15-14_seed5428/history_meanstd.csv",
     },
     "Humanoid": {
         "SAC + Lag":     "../results/Humanoid-v3/humanoid_saclag/2025-12-17_00-06_seed8526/history_meanstd.csv",
         "SAC + AugLag":  "../results/Humanoid-v3/humanoid_sacauglag/2025-12-17_01-00_seed6583/history_meanstd.csv",
-        "HJB":           "../results/Humanoid-v3/humanoid_hjb/2025-12-16_22-42_seed9964/history_meanstd.csv",
+        "HJ":           "../results/Humanoid-v3/humanoid_hjb/2025-12-16_22-42_seed9964/history_meanstd.csv",
         "CAL":           "../results/Humanoid-v3/humanoid_cal/2025-12-11_14-42_seed6796/history_meanstd.csv",
         # "ALGD (Ours)":   "../results/Humanoid-v3/humanoid_algd/2025-12-14_04-02_seed516/history_meanstd.csv",
         "ALGD (Ours)":   "temp_history/humanoid_history_meanstd.csv",

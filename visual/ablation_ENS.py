@@ -53,11 +53,12 @@ TASK_REWARD_Y_TICK_STEP = {
 COST_THRESHOLD = 10
 
 # ======================= 消融配置：Ensemble size i 与颜色 =======================
-I_LIST = [2, 4, 6, 8, 16]
-MODEL_KEYS = [f"i={i}" for i in I_LIST]              # ✅ 用于字典索引（保持原样）
-MODEL_LABELS = [rf"$i={i}$" for i in I_LIST]         # ✅ 用于 legend 显示（LaTeX）
+I_LIST = [1, 2, 4, 6, 8, 16]
+MODEL_KEYS = [f"M={i}" for i in I_LIST]              # ✅ 用于字典索引（保持原样）
+MODEL_LABELS = [rf"$M={i}$" for i in I_LIST]         # ✅ 用于 legend 显示（LaTeX）
 
 MODEL_COLORS = [
+    "#ff6b6b",
     "#5ad7c3",
     "#8a6bc7",
     "#5da7df",
@@ -103,53 +104,62 @@ def smooth_ema(values, weight=0.8):
 # ======================= 结果路径：每个 task、每个 i 对应多个 csv 路径 =======================
 ENSEMBLE_HISTORY_PATHS = {
     "PointPush1": {
-        "i=2":  [
+        "M=1": [
+            "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS1/2026-01-15_04-07_seed6710/history.csv",
+            "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS1/2026-01-15_04-22_seed9816/history.csv",
+        ],
+        "M=2":  [
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS2/2025-12-29_23-54_seed4331/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS2/2025-12-30_00-33_seed1528/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationMC4/2025-12-26_16-50_seed9120/history.csv",
         ],
-        "i=4":  [
+        "M=4":  [
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationMC4/2025-12-26_17-01_seed3598/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS2/2025-12-29_23-05_seed3000/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationMC4/2025-12-26_16-18_seed2204/history.csv",
         ],
-        "i=6":  [
+        "M=6":  [
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS8/2025-12-29_23-38_seed7464/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS6/2025-12-30_00-05_seed7082/history.csv",
         ],
-        "i=8":  [
+        "M=8":  [
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS8/2025-12-29_23-23_seed6509/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS8/2025-12-29_23-21_seed1045/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS6/2025-12-29_23-58_seed9719/history.csv",
         ],
-        "i=16": [
+        "M=16": [
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-41_seed283/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-10_seed6576/history.csv",
             "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS6/2025-12-29_23-35_seed6538/history.csv",
         ],
     },
     "PointButton2": {
-        "i=2":  [
-            "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS2/2025-12-30_00-03_seed3019/history.csv",
+        "M=1": [
+            "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS1/2026-01-15_04-18_seed2395/history.csv",
+            "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS1/2026-01-15_05-16_seed4453/history.csv",
+        ],
+        "M=2":  [
+            # "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS2/2025-12-30_00-03_seed3019/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS2/2025-12-30_00-19_seed5229/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS2/2025-12-30_01-00_seed3822/history.csv",
+            "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationMC4/2025-12-26_16-37_seed870/history.csv",
         ],
-        "i=4":  [
+        "M=4":  [
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS2/2025-12-30_01-00_seed3822/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS6/2025-12-30_00-11_seed2129/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationMC4/2025-12-26_16-37_seed870/history.csv",
         ],
-        "i=6":  [
+        "M=6":  [
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS6/2025-12-29_23-51_seed4529/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS6/2025-12-30_00-11_seed2129/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS6/2025-12-30_00-12_seed3981/history.csv",
         ],
-        "i=8":  [
+        "M=8":  [
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS8/2025-12-29_23-38_seed1410/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS8/2025-12-30_00-48_seed6259/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS8/2025-12-30_00-58_seed4647/history.csv",
         ],
-        "i=16": [
+        "M=16": [
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-29_23-52_seed2017/history.csv",
             "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-30_00-28_seed1282/history.csv",
         ],

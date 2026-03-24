@@ -15,6 +15,7 @@ MOJOCO:
 - 'Ant-v3' # 200
 - 'Humanoid-v3' # 500
 
+python time.py --agent algd --env_name Hopper-v3 --experiment_name algd_time --num_epoch 10 --cuda
 
 ### CarButton1
 
@@ -37,12 +38,19 @@ python main.py --agent hjb --env_name Humanoid-v3 --experiment_name humanoid_hjb
 
 python main_on_policy.py --agent ppolag --env_name Safexp-PointButton1-v0 --experiment_name pointbutton1_ppolag_long --num_epoch 2500 --cuda --use_tensorboard --save_history --save_parameters
 
+python time_on_policy.py --agent ppolag --env_name Hopper-v3 --experiment_name hopper_ppolag_long --num_epoch 2500 --cuda
+
 # lambda comparison
 
-python main.py --agent algd --env_name Hopper-v3 --experiment_name hopper_algd_augmentedlambda --num_epoch 150 --cuda --use_tensorboard --save_history --save_parameters
+python main.py --agent algd --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_algd_auglambda --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
 
 ## set use_aug_lag == False in algd_v5.py
-python main.py --agent algd --env_name Hopper-v3 --experiment_name hopper_algd_lambda --num_epoch 150 --cuda --use_tensorboard --save_history --save_parameters
+python main.py --agent algd --env_name Safexp-CarButton1-v0 --experiment_name carbutton1_algd_lambda --num_epoch 375 --cuda --use_tensorboard --save_history --save_parameters
+
+
+
+
+
 
 
 # MC ablation

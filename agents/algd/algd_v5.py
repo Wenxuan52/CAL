@@ -29,7 +29,7 @@ class ALGDAgent(Agent):
         self.c = args.c
         self.cost_lr_scale = 1.
         
-        self.rho = getattr(args, "rho", 4.0) ##### 1.0
+        self.rho = getattr(args, "rho", 1.0) ##### 1.0
         self.T = getattr(args, "diffusion_T", 5)
        
         self.actor_loss_coef = getattr(args, "actor_loss_coef", 1.0)
@@ -95,7 +95,7 @@ class ALGDAgent(Agent):
         print("Constraint Budget: ", self.target_cost)
         
         # ====== profiling: score_mc time ======
-        self.profile_score_mc = getattr(args, "profile_score_mc", True)
+        self.profile_score_mc = getattr(args, "profile_score_mc", False)
         self.profile_warmup = getattr(args, "profile_warmup", 50)   # 前 50 次不计（避开cuda热身）
         self.profile_every = getattr(args, "profile_every", 1)      # 每隔几次记录一次
         self._mc_prof_step = 0

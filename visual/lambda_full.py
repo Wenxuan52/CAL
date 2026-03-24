@@ -19,6 +19,7 @@ def k_formatter(x, pos):
     return str(int(x))
 
 # ======================= 路径 =======================
+# ----------- PointButton1 -----------
 POINTBUTTON1_AUGLAG_PATHS = [
     "../results/Safexp-PointButton1-v0/pointbutton1_algd_ablationRHO4.0/2025-12-31_11-55_seed7682/history.csv",
     "../results/Safexp-PointButton1-v0/pointbutton1_algd_ablationRHO2.0/2025-12-31_11-36_seed999/history.csv",
@@ -31,6 +32,40 @@ POINTBUTTON1_LAG_PATHS = [
     "../results/Safexp-PointButton1-v0/pointbutton1_algd_lambda/2025-12-20_15-59_seed8822/history.csv",
 ]
 
+# ----------- CarButton1 -----------
+CARBUTTON1_AUGLAG_PATHS = [
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_auglambda/2026-01-25_17-08_seed400/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_auglambda/2026-01-25_16-59_seed2104/history.csv",
+]
+CARBUTTON1_LAG_PATHS = [
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_lambda/2026-01-25_16-50_seed2375/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_lambda/2026-01-25_16-50_seed3432/history.csv",
+    "../results/Safexp-CarButton1-v0/carbutton1_algd_lambda/2026-01-25_17-20_seed8398/history.csv",
+]
+
+# ----------- PointPush1 -----------
+POINTPUSH1_AUGLAG_PATHS = [
+    "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-41_seed283/history.csv",
+    "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-10_seed6576/history.csv",
+    "../results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS6/2025-12-29_23-35_seed6538/history.csv",
+]
+POINTPUSH1_LAG_PATHS = [
+    "../results/Safexp-PointPush1-v0/pointpush1_algd_lambda/2026-01-26_04-38_seed4366/history.csv",
+    "../results/Safexp-PointPush1-v0/pointpush1_algd_lambda/2026-01-26_03-11_seed3236/history.csv",
+]
+
+# ----------- PointButton2 -----------
+POINTBUTTON2_AUGLAG_PATHS = [
+    "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-29_23-52_seed2017/history.csv",
+    "../results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-30_00-28_seed1282/history.csv",
+]
+POINTBUTTON2_LAG_PATHS = [
+    "../results/Safexp-PointButton2-v0/pointbutton2_algd_lambda/2026-01-26_04-28_seed1136/history.csv",
+    "../results/Safexp-PointButton2-v0/pointbutton2_algd_lambda/2026-01-26_04-29_seed3378/history.csv",
+    "../results/Safexp-PointButton2-v0/pointbutton2_algd_lambda/2026-01-26_05-12_seed4522/history.csv",
+]
+
+# ----------- Hopper -----------
 HOPPER_AUGLAG_PATHS = [
     "../results/Hopper-v3/hopper_algd_augmentedlambda/2025-12-23_12-16_seed8003/history.csv",
     "../results/Hopper-v3/hopper_algd_augmentedlambda/2025-12-23_11-31_seed8196/history.csv",
@@ -53,26 +88,43 @@ LINE_WIDTH = 1.5
 LINE_ALPHA = 1.0
 
 YLABEL_FONTSIZE = 12
-DEFAULT_X_TICK_STEP = 25_000
+DEFAULT_X_TICK_STEP = 50_000
 
 # ======================= 预算阈值（用于从 cost 兜底计算 violation_mean） =======================
 COST_LIMIT = {
     "PointButton1": 10.0,
-    "Hopper": 82.748,
+    "CarButton1":   10.0, 
+    "PointPush1":   10.0,
+    "PointButton2": 10.0,
+    "Hopper":       82.748,
 }
 
 # ======================= 固定 y 轴范围 =======================
-# 现在是 3 列：reward / lambda / violation_mean
 TASK_YLIM = {
     "PointButton1": {
         "return": (-3, 42),
         "lambda": (-0.02, 0.14),
         "violation_mean": (-0.08, 2.0),
     },
+    "CarButton1": {  # TODO: 可按图调整
+        "return": (-3, 31),
+        "lambda": (-0.02, 0.14),
+        "violation_mean": (-1.0, 10.0),
+    },
+    "PointPush1": {  # TODO: 可按图调整
+        "return": (-3, 7),
+        "lambda": (-0.02, 0.14),
+        "violation_mean": (-1.0, 10.0),
+    },
+    "PointButton2": {  # TODO: 可按图调整
+        "return": (-3, 42),
+        "lambda": (-0.02, 0.14),
+        "violation_mean": (-1.0, 10.0),
+    },
     "Hopper": {
         "return": (0, 2200),
         "lambda": (-0.12, 1.0),
-        "violation_mean": (-2.0, 40.0),  # Hopper 违反幅度可能更大，你可按图再收紧
+        "violation_mean": (-2.0, 40.0),
     }
 }
 
@@ -117,9 +169,7 @@ def read_one_history(path: str, task_name: str) -> pd.DataFrame:
     df = df.sort_values("step").drop_duplicates("step").reset_index(drop=True)
 
     # ---- 目标：保证 df 里有 violation_mean ----
-    # 1) 如果已经记录了 violation_mean（例如训练时保存的），直接用
     if "violation_mean" not in df.columns:
-        # 2) 否则用 eval cost 兜底计算：max(0, cost - h)
         h = COST_LIMIT.get(task_name, None)
         if h is None:
             raise ValueError(f"Missing COST_LIMIT for task '{task_name}'. Please set COST_LIMIT[\"{task_name}\"]")
@@ -185,27 +235,28 @@ def plot_mean_std(ax, steps, mean, std, color, label=None, metric_name=None):
     if metric_name == "violation_mean":
         mean = np.maximum(mean, 0.0)
         lower = np.maximum(lower, 0.0)
-        # upper 不需要 clip；如果你也想保证非负，可以加：upper = np.maximum(upper, 0.0)
 
     ax.fill_between(steps, lower, upper, color=color, alpha=BAND_ALPHA, linewidth=0)
     line, = ax.plot(steps, mean, color=color, linewidth=LINE_WIDTH, label=label, alpha=LINE_ALPHA)
     return line
 
-
-# ======================= 主绘图：2 行 3 列 =======================
+# ======================= 主绘图：3 行 5 列 =======================
 def plot_lambda_compare(save_path="lambda_compare.pdf"):
+    # 列标签顺序：PointButton1、CarButton1、PointPush1、PointButton2、Hopper
     tasks = [
         ("PointButton1", POINTBUTTON1_AUGLAG_PATHS, POINTBUTTON1_LAG_PATHS),
+        ("CarButton1",   CARBUTTON1_AUGLAG_PATHS,   CARBUTTON1_LAG_PATHS),
+        ("PointPush1",   POINTPUSH1_AUGLAG_PATHS,   POINTPUSH1_LAG_PATHS),
+        ("PointButton2", POINTBUTTON2_AUGLAG_PATHS, POINTBUTTON2_LAG_PATHS),
         ("Hopper",       HOPPER_AUGLAG_PATHS,       HOPPER_LAG_PATHS),
     ]
 
     metric_names = ["return", "lambda", "violation_mean"]
     plot_row_titles = ["Reward", "Lambda", "Average Violation"]  # 行标签（3 行）
-    # 列标签为 task_name（2 列）：PointButton1 / Hopper
 
     fig, axes = plt.subplots(
-        3, 2, figsize=(10, 8),
-        gridspec_kw={"width_ratios": [1.0, 1.0]},
+        3, len(tasks), figsize=(20, 8),
+        gridspec_kw={"width_ratios": [1.0] * len(tasks)},
         sharex=False
     )
 
@@ -226,7 +277,7 @@ def plot_lambda_compare(save_path="lambda_compare.pdf"):
             ax = axes[row, col]
             setup_axis_common(ax)
 
-            # 列标签：只在第一行设置标题（PointButton1 / Hopper）
+            # 列标签：只在第一行设置标题（任务名）
             if row == 0:
                 ax.set_title(task_name)
 
@@ -282,4 +333,4 @@ def plot_lambda_compare(save_path="lambda_compare.pdf"):
     print(f"[Saved] {save_path}")
 
 if __name__ == "__main__":
-    plot_lambda_compare("lambda_compare.pdf")
+    plot_lambda_compare("lambda_full.pdf")
