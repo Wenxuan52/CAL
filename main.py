@@ -21,6 +21,7 @@ from agents.algd.algd_v5 import ALGDAgent
 from agents.saclag.saclag import SACLagAgent
 from agents.sacauglag.sacauglag import SACAugLagAgent
 from agents.hardhjb.hardhjb import HJBAgent
+from agents.offpolicy_ppolag.offpolicy_ppolag import OffPolicyPPOLagAgent
 
 
 def train(args, env_sampler, agent, pool, writer=None):
@@ -37,6 +38,8 @@ def train(args, env_sampler, agent, pool, writer=None):
         for i in range(epo_len):
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, i)
             pool.push(cur_state, action, reward, next_state, done)
+            if hasattr(agent, "store_transition"):
+                agent.store_transition(cur_state, action, reward, next_state, done)
 
             # train the policy
             if len(pool) > args.min_pool_size:
@@ -105,6 +108,7 @@ def train(args, env_sampler, agent, pool, writer=None):
             
         epoch += 1
 
+    save_dir = None
     if args.save_history and len(history) > 0:
         import datetime
         date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -116,6 +120,11 @@ def train(args, env_sampler, agent, pool, writer=None):
     
     # save network parameters after training
     if args.save_parameters:
+        if save_dir is None:
+            import datetime
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+            save_dir = Path.cwd() / "results" / args.env_name / args.experiment_name / f"{date_str}_seed{args.seed}"
+            save_dir.mkdir(parents=True, exist_ok=True)
         agent.save_model(save_dir)
 
 
@@ -123,6 +132,8 @@ def exploration_before_start(args, env_sampler, pool, agent):
     for i in range(args.init_exploration_steps):
         cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, i)
         pool.push(cur_state, action, reward, next_state, done)
+        if hasattr(agent, "store_transition"):
+            agent.store_transition(cur_state, action, reward, next_state, done)
 
 
 def train_policy_repeats(args, total_step, train_step, pool, agent):
@@ -199,6 +210,8 @@ def main(args):
         agent = SACAugLagAgent(s_dim, env.action_space, args)
     elif args.agent.lower() == 'hjb':
         agent = HJBAgent(s_dim, env.action_space, args)
+    elif args.agent.lower() == 'offpolicy_ppolag':
+        agent = OffPolicyPPOLagAgent(s_dim, env.action_space, args)
     else:
         raise ValueError(f"Unknown agent type: {args.agent}")
 
@@ -240,6 +253,8 @@ if __name__ == '__main__':
         from configs.sacauglag import SACAugLagParser as readParser
     elif base_args.agent.lower() == "hjb":
         from configs.hardhjb import HJBParser as readParser
+    elif base_args.agent.lower() == "offpolicy_ppolag":
+        from configs.offpolicy_ppolag import OffPolicyPPOLagParser as readParser
     else:
         raise ValueError(f"Unknown agent type: {base_args.agent}")
     
@@ -249,8 +264,10 @@ if __name__ == '__main__':
         args.safetygym = True
         args.epoch_length = 400
     
-    print(args.qc_ens_size)
-    print(args.M)
+    if hasattr(args, "qc_ens_size"):
+        print(args.qc_ens_size)
+    if hasattr(args, "M"):
+        print(args.M)
     
     args.cost_lim = get_threshold(args.env_name, constraint=args.constraint_type)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_num
