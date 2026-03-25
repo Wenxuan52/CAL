@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import os
+import csv
 
 from pathlib import Path
 
@@ -104,6 +105,29 @@ class ALGDAgent(Agent):
         self._mc_time_n = 0
         self._mc_time_mean = 0.0
         self._mc_time_M2 = 0.0
+
+        # Extra geometry metrics (every 10k env steps)
+        self.metric_interval = 10_000
+        self.next_metric_step = self.metric_interval
+        self.metric_csv_path = Path.cwd() / f"{self.args.env_name}_metric_{self.args.seed}.csv"
+        self.metric_columns = [
+            "env_name",
+            "env_step",
+            "abs_LA_minus_L",
+            "grad_Qc_norm",
+            "rho_grad_Qc_norm_sq",
+            "hess_Qc_trace",
+            "dom_ratio",
+            "grad_LA_norm",
+            "grad_LA_minus_L_norm",
+            "hess_LA_trace",
+            "lambda_min_hess_LA",
+            "lambda_min_hess_L",
+        ]
+        if not self.metric_csv_path.exists():
+            with open(self.metric_csv_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=self.metric_columns)
+                writer.writeheader()
     
     def _welford_update(self, x_ms: float):
         self._mc_time_n += 1
@@ -415,8 +439,102 @@ class ALGDAgent(Agent):
                 "score_mc_time_n": int(stats["n"]),
             }
 
+    def _collect_geometry_metrics(self, state_batch, action_batch, env_step):
+        eps = 1e-8
+        rho = float(self.rho)
+        h = float(self.target_cost)
 
-    def update_parameters(self, memory, updates):
+        state = state_batch.detach()
+        action = action_batch.detach().clone().requires_grad_(True)
+
+        L, _, qc_risk = self.compute_L(state, action)
+        LA, _, _ = self.compute_LA(state, action)
+
+        grad_qc = torch.autograd.grad(
+            outputs=qc_risk.sum(),
+            inputs=action,
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        grad_L = torch.autograd.grad(
+            outputs=L.sum(),
+            inputs=action,
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        grad_LA = torch.autograd.grad(
+            outputs=LA.sum(),
+            inputs=action,
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+
+        qc_delta = (qc_risk - h).squeeze(-1)
+        grad_qc_norm = torch.norm(grad_qc, dim=-1)
+
+        traces_qc, traces_la = [], []
+        min_eigs_la, min_eigs_l = [], []
+
+        for i in range(state.shape[0]):
+            s_i = state[i:i + 1]
+            a_i = action[i].detach().clone().requires_grad_(True)
+
+            def qc_scalar(a_vec):
+                _, _, qc_val = self.compute_L(s_i, a_vec.unsqueeze(0))
+                return qc_val.squeeze()
+
+            def la_scalar(a_vec):
+                la_val, _, _ = self.compute_LA(s_i, a_vec.unsqueeze(0))
+                return la_val.squeeze()
+
+            def l_scalar(a_vec):
+                l_val, _, _ = self.compute_L(s_i, a_vec.unsqueeze(0))
+                return l_val.squeeze()
+
+            hess_qc = torch.autograd.functional.hessian(qc_scalar, a_i)
+            hess_la = torch.autograd.functional.hessian(la_scalar, a_i)
+            hess_l = torch.autograd.functional.hessian(l_scalar, a_i)
+
+            traces_qc.append(torch.trace(hess_qc))
+            traces_la.append(torch.trace(hess_la))
+            min_eigs_la.append(torch.linalg.eigvalsh(hess_la).min())
+            min_eigs_l.append(torch.linalg.eigvalsh(hess_l).min())
+
+        trace_qc = torch.stack(traces_qc)
+        trace_la = torch.stack(traces_la)
+        min_eig_la = torch.stack(min_eigs_la)
+        min_eig_l = torch.stack(min_eigs_l)
+
+        dom_ratio = (rho * grad_qc_norm.pow(2)) / (rho * qc_delta.abs() * trace_qc.abs() + eps)
+
+        row = {
+            "env_name": self.args.env_name,
+            "env_step": int(env_step),
+            "abs_LA_minus_L": float((LA - L).abs().mean().detach().cpu().item()),
+            "grad_Qc_norm": float(grad_qc_norm.mean().detach().cpu().item()),
+            "rho_grad_Qc_norm_sq": float((rho * grad_qc_norm.pow(2)).mean().detach().cpu().item()),
+            "hess_Qc_trace": float(trace_qc.mean().detach().cpu().item()),
+            "dom_ratio": float(dom_ratio.mean().detach().cpu().item()),
+            "grad_LA_norm": float(torch.norm(grad_LA, dim=-1).mean().detach().cpu().item()),
+            "grad_LA_minus_L_norm": float(torch.norm(grad_LA - grad_L, dim=-1).mean().detach().cpu().item()),
+            "hess_LA_trace": float(trace_la.mean().detach().cpu().item()),
+            "lambda_min_hess_LA": float(min_eig_la.mean().detach().cpu().item()),
+            "lambda_min_hess_L": float(min_eig_l.mean().detach().cpu().item()),
+        }
+
+        with open(self.metric_csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=self.metric_columns)
+            writer.writerow(row)
+
+    def maybe_collect_geometry_metrics(self, env_step, state_batch, action_batch):
+        if env_step is None:
+            return
+        while env_step >= self.next_metric_step:
+            self._collect_geometry_metrics(state_batch, action_batch, self.next_metric_step)
+            self.next_metric_step += self.metric_interval
+
+
+    def update_parameters(self, memory, updates, env_step=None):
         self.update_counter += 1
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory
 
@@ -429,6 +547,7 @@ class ALGDAgent(Agent):
 
         self.update_critic(state_batch, action_batch, reward_batch, cost_batch, next_state_batch, mask_batch)
         self.update_actor(state_batch, action_batch)
+        self.maybe_collect_geometry_metrics(env_step, state_batch, action_batch)
 
         if updates % self.critic_target_update_frequency == 0:
             soft_update(self.critic_target, self.critic, self.critic_tau)
