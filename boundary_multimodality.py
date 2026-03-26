@@ -8,12 +8,11 @@ python boundary_multimodality.py \
   --results_folder results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/
 """
 
-from __future__ import annotations
-
 import argparse
 import random
 from pathlib import Path
 from types import SimpleNamespace
+from typing import List, Tuple
 
 import gym
 import numpy as np
@@ -134,7 +133,7 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def kmeans2(actions: np.ndarray, iters: int = 20) -> tuple[np.ndarray, np.ndarray]:
+def kmeans2(actions: np.ndarray, iters: int = 20) -> Tuple[np.ndarray, np.ndarray]:
     """Very light k=2 kmeans, returns (centers[2,act_dim], labels[N])."""
     n = actions.shape[0]
     idx0, idx1 = np.random.choice(n, size=2, replace=False)
@@ -214,8 +213,8 @@ def collect_near_boundary_states(
     margin: float,
     num_states: int,
     max_env_steps: int,
-) -> list[np.ndarray]:
-    states: list[np.ndarray] = []
+) -> List[np.ndarray]:
+    states = []  # type: List[np.ndarray]
 
     obs = env.reset()
     if isinstance(obs, tuple):
