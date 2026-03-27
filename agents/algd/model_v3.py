@@ -385,6 +385,47 @@ class DiffusionPolicy(nn.Module):
         a0 = torch.tanh(x_t) * self.action_scale + self.action_bias
         return a0, a_tau, taus
 
+    def sample_with_full_trajectory(self, state, steps=None, start_noise=None):
+        """
+        Offline analysis helper:
+        return the full reverse-denoising action trajectory.
+
+        Returns:
+            a0: [B, act_dim] final action
+            actions_by_step: [steps, B, act_dim]
+                - index 0 corresponds to the first reverse step (t = steps-1)
+                - index steps-1 corresponds to the last reverse step (t = 0)
+            timesteps_by_step: [steps] long
+                - DDPM timestep used at each denoising step
+        """
+        if steps is None:
+            steps = self.T
+
+        b = state.size(0)
+        device = state.device
+
+        if start_noise is None:
+            x_t = torch.randn(b, self.action_dim, device=device)
+        else:
+            x_t = start_noise.to(device)
+            if x_t.shape != (b, self.action_dim):
+                raise ValueError(
+                    f"start_noise shape must be {(b, self.action_dim)}, got {tuple(x_t.shape)}"
+                )
+
+        traj_actions = []
+        traj_timesteps = []
+        for i in reversed(range(steps)):
+            x_t = self.p_sample(state, x_t, i)
+            a_t = torch.tanh(x_t) * self.action_scale + self.action_bias
+            traj_actions.append(a_t)
+            traj_timesteps.append(i)
+
+        a0 = traj_actions[-1]
+        actions_by_step = torch.stack(traj_actions, dim=0)
+        timesteps_by_step = torch.tensor(traj_timesteps, device=device, dtype=torch.long)
+        return a0, actions_by_step, timesteps_by_step
+
 
     def sample_deterministic(self, state, steps=None):
         """
