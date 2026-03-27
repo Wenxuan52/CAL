@@ -25,10 +25,6 @@ def OffPolicyPPOLagParser():
     parser.add_argument('--save_parameters', action='store_true', default=False)
     parser.add_argument('--save_history', action='store_true', default=False)
 
-    # Compatibility fields used by main.py prints
-    parser.add_argument('--qc_ens_size', type=int, default=1)
-    parser.add_argument('--M', type=int, default=1)
-
     # Core RL
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--safety_gamma', type=float, default=0.99)
@@ -43,7 +39,7 @@ def OffPolicyPPOLagParser():
     parser.add_argument('--min_pool_size', type=int, default=1000)
     parser.add_argument('--policy_train_batch_size', type=int, default=128)
     parser.add_argument('--recent_replay_size', type=int, default=50000)
-    parser.add_argument('--trace_len', type=int, default=16)
+    parser.add_argument('--trace_len', type=int, default=8)
 
     # PPO-Lag objective
     parser.add_argument('--clip_ratio', type=float, default=0.2)
