@@ -15,15 +15,15 @@ from env.constraints import get_threshold
 # ============================================================
 # Editable paths / core config
 # ============================================================
-ENV_NAME = "Hopper-v3"
-SEED = 123
-SAFETYGYM = False
+ENV_NAME = "Safexp-PointButton2-v0"
+SEED = 3240
+SAFETYGYM = True
 CONSTRAINT_TYPE = "safetygym" if "Safe" in ENV_NAME else "velocity"
 
 # Checkpoints saved by ALGDAgent.save_model(...)
-ACTOR_CHECKPOINT_PATH = "./actor_checkpoint.pth"
-CRITICS_CHECKPOINT_PATH = "./critics_checkpoint.pth"
-SAFETY_CRITICS_CHECKPOINT_PATH = "./safetycritics_checkpoint.pth"
+ACTOR_CHECKPOINT_PATH = "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/actor_.pth"
+CRITICS_CHECKPOINT_PATH = "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/critics_.pth"
+SAFETY_CRITICS_CHECKPOINT_PATH = "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/safetycritics_.pth"
 
 # Output CSV path (repo root)
 OUTPUT_CSV_PATH = f"denoising_{SEED}.csv"
@@ -41,7 +41,7 @@ STATE_SELECTION_MODE = "random"  # "random" or "boundary_near"
 NUM_CANDIDATE_STATES = 1024
 MAX_ROLLOUT_STEPS = 5000
 
-DIFFUSION_STEPS_OVERRIDE = None  # None -> use policy.T from checkpointed architecture
+DIFFUSION_STEPS_OVERRIDE = 5  # None -> use policy.T from checkpointed architecture
 USE_DETERMINISTIC_POLICY_FOR_STATE_ROLLOUT = True
 
 
@@ -65,7 +65,7 @@ def build_args(env_name: str, seed: int, safetygym: bool):
         lr=3e-4,
         qc_lr=3e-4,
         k=1.0,
-        qc_ens_size=4,
+        qc_ens_size=16,
         M=4,
         intrgt_max=False,
         c=10.0,

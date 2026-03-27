@@ -105,13 +105,13 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
         "fixed_boundary_reference": {
             "method": "algd",  # "algd" or "sacauglag"
             "seed": 3240,
-            "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/",
+            "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240",
         },
 
         "algd_runs": [
-            {"seed": 3240, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240/"},
-            {"seed": 2017, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-29_23-52_seed2017"},
-            {"seed": 1282, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd_ablationENS16/2025-12-30_00-28_seed1282"},
+            {"seed": 3245, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240"},
+            {"seed": 2017, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240"},
+            {"seed": 1282, "results_folder": "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240"},
         ],
 
         "sacauglag_runs": [
@@ -126,14 +126,14 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
 
         "fixed_boundary_reference": {
             "method": "algd",
-            "seed": 3240,
-            "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationMC16/2025-12-26_16-17_seed5767",
+            "seed": 6576,
+            "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-10_seed6576",
         },
 
         "algd_runs": [
             {"seed": 6576, "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-10_seed6576"},
             {"seed": 283, "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-41_seed283"},
-            {"seed": 5767, "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationMC16/2025-12-26_16-17_seed5767"},
+            {"seed": 5767, "results_folder": "results/Safexp-PointPush1-v0/pointpush1_algd_ablationENS16/2025-12-29_23-10_seed6576"},
         ],
 
         "sacauglag_runs": [
