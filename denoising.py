@@ -1,6 +1,7 @@
 import os
 import csv
 import random
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -86,7 +87,14 @@ def build_args(env_name: str, seed: int, safetygym: bool):
 
 
 def make_env(env_name: str, seed: int, safetygym: bool):
-    env = gym.make(env_name)
+    try:
+        env = gym.make(env_name)
+    except gym.error.NameNotFound as exc:
+        if safetygym and env_name.startswith("Safexp-"):
+            register_safetygym_envs()
+            env = gym.make(env_name)
+        else:
+            raise exc
     if safetygym:
         env.seed(seed)
     else:
@@ -112,6 +120,48 @@ def set_global_seeds(seed: int):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+def register_safetygym_envs():
+    """
+    Register Safety-Gym envs from the vendored package under env/safety-gym.
+    This avoids requiring a separate pip install in this repository layout.
+    """
+    repo_root = Path(__file__).resolve().parent
+    safetygym_pkg_dir = repo_root / "env" / "safety-gym"
+    if not safetygym_pkg_dir.exists():
+        raise RuntimeError(
+            "Cannot find local Safety-Gym package at env/safety-gym. "
+            f"Current expected path: {safetygym_pkg_dir}"
+        )
+
+    if str(safetygym_pkg_dir) not in sys.path:
+        sys.path.insert(0, str(safetygym_pkg_dir))
+
+    try:
+        __import__("safety_gym")
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to import safety_gym for Safexp environments. "
+            "Safety-Gym depends on MuJoCo; if you do not use MuJoCo, please switch "
+            "ENV_NAME to a non-Safexp environment and set SAFETYGYM=False."
+        ) from exc
+
+
+def normalize_omp_num_threads():
+    """
+    libgomp may fail when OMP_NUM_THREADS is invalid (e.g., empty/non-integer).
+    Set a safe default when needed.
+    """
+    omp_value = os.environ.get("OMP_NUM_THREADS")
+    if omp_value is None:
+        os.environ["OMP_NUM_THREADS"] = "1"
+        return
+    try:
+        if int(omp_value) <= 0:
+            os.environ["OMP_NUM_THREADS"] = "1"
+    except ValueError:
+        os.environ["OMP_NUM_THREADS"] = "1"
 
 
 def collect_candidate_states(env, agent, n_candidates: int, max_steps: int, eval_policy: bool):
@@ -279,6 +329,7 @@ def save_rows_to_csv(rows, output_csv_path: str):
 
 def main():
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    normalize_omp_num_threads()
     set_global_seeds(SEED)
 
     env = make_env(ENV_NAME, SEED, SAFETYGYM)
