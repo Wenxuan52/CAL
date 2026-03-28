@@ -252,7 +252,12 @@ def validate_config() -> None:
         )
 
 
-def make_agent_args(method: str, env_id: str, seed: int) -> SimpleNamespace:
+def make_agent_args(
+    method: str,
+    env_id: str,
+    seed: int,
+    hparam_overrides: Dict[str, Any] = None,
+) -> SimpleNamespace:
     common = dict(GLOBAL_CONFIG["common_hparams"])
     method_specific = dict(GLOBAL_CONFIG["algd_hparams"] if method == "algd" else GLOBAL_CONFIG["sacauglag_hparams"])
 
@@ -269,6 +274,8 @@ def make_agent_args(method: str, env_id: str, seed: int) -> SimpleNamespace:
             seed=seed,
         )
     )
+    if hparam_overrides:
+        merged.update(dict(hparam_overrides))
 
     # Ensure optional fields exist even if a class expects them.
     defaults = {
@@ -292,17 +299,41 @@ def make_agent_args(method: str, env_id: str, seed: int) -> SimpleNamespace:
     return SimpleNamespace(**merged)
 
 
-def instantiate_agent(method: str, env, seed: int):
+def instantiate_agent(
+    method: str,
+    env,
+    seed: int,
+    hparam_overrides: Dict[str, Any] = None,
+):
     env_id = env.spec.id if getattr(env, "spec", None) is not None else None
     if env_id is None:
         raise ValueError("Environment spec.id is required to infer the task name.")
 
-    args = make_agent_args(method=method, env_id=env_id, seed=seed)
+    args = make_agent_args(
+        method=method,
+        env_id=env_id,
+        seed=seed,
+        hparam_overrides=hparam_overrides,
+    )
     obs_dim = env.observation_space.shape[0]
     agent_cls = ALGDAgent if method == "algd" else SACAugLagAgent
     agent = agent_cls(obs_dim, env.action_space, args)
     safe_eval_mode(agent)
     return agent
+
+
+def infer_qc_ensemble_size_from_checkpoint(safety_ckpt_path: Path) -> int:
+    state = torch.load(safety_ckpt_path, map_location="cpu")
+    if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        state = state["state_dict"]
+
+    if not isinstance(state, dict):
+        return 1
+
+    for key in ("nn1.weight", "module.nn1.weight"):
+        if key in state and hasattr(state[key], "shape") and len(state[key].shape) >= 1:
+            return int(state[key].shape[0])
+    return 1
 
 
 def resolve_checkpoint_file(results_folder: Path, patterns: Sequence[str], kind: str) -> Path:
@@ -662,7 +693,18 @@ def summarize(values: List[float]) -> Tuple[float, float]:
 # =============================================================================
 
 def build_loaded_agent(method: str, env, seed: int, results_folder: str):
-    agent = instantiate_agent(method=method, env=env, seed=seed)
+    _, _, safety_path = find_checkpoint_triplet(results_folder)
+    inferred_qc_ens_size = infer_qc_ensemble_size_from_checkpoint(safety_path)
+    hparam_overrides = {
+        "qc_ens_size": inferred_qc_ens_size,
+        "M": min(GLOBAL_CONFIG["common_hparams"].get("M", 4), inferred_qc_ens_size),
+    }
+    agent = instantiate_agent(
+        method=method,
+        env=env,
+        seed=seed,
+        hparam_overrides=hparam_overrides,
+    )
     actor_path, critic_path, safety_path = load_agent_checkpoints(agent, results_folder)
     return agent, actor_path, critic_path, safety_path
 
