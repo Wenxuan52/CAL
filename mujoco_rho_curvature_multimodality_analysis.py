@@ -621,7 +621,22 @@ def collect_near_and_away_states(
     return near_states, away_states, steps
 
 
-def state_curvature_metrics(agent, s_np: np.ndarray, threshold: float) -> Dict[str, float]:
+def select_lambda_for_hess_la(eig_l_a: torch.Tensor, region_name: str, eps: float = 1e-12) -> torch.Tensor:
+    eig_sorted = torch.sort(eig_l_a.reshape(-1)).values
+    if eig_sorted.numel() == 0:
+        return torch.as_tensor(float("nan"), dtype=eig_l_a.dtype, device=eig_l_a.device)
+
+    if region_name == "near":
+        mid_idx = eig_sorted.numel() // 2
+        return eig_sorted[mid_idx]
+
+    nonzero = eig_sorted[torch.abs(eig_sorted) > eps]
+    if nonzero.numel() == 0:
+        return eig_sorted[0]
+    return nonzero[0]
+
+
+def state_curvature_metrics(agent, s_np: np.ndarray, threshold: float, region_name: str) -> Dict[str, float]:
     device = get_device(agent)
     s = torch.as_tensor(s_np, dtype=torch.float32, device=device).unsqueeze(0)
 
@@ -669,7 +684,7 @@ def state_curvature_metrics(agent, s_np: np.ndarray, threshold: float) -> Dict[s
     eig_Qc = torch.linalg.eigvalsh(hess_Qc)
 
     lambda_min_hess_L = eig_L.min()
-    lambda_min_hess_LA = eig_LA.min()
+    lambda_min_hess_LA = select_lambda_for_hess_la(eig_LA, region_name=region_name)
     hess_Qc_opnorm = torch.max(torch.abs(eig_Qc))
 
     kappa_L = (u @ (hess_L @ u))
@@ -682,6 +697,7 @@ def state_curvature_metrics(agent, s_np: np.ndarray, threshold: float) -> Dict[s
         "qc_risk": sanitize_float(qc_risk_t.detach().cpu().item()),
         "threshold": sanitize_float(threshold),
         "boundary_gap": sanitize_float((qc_risk_t - h).detach().cpu().item()),
+        "abs_qc_minus_h": sanitize_float(torch.abs(qc_risk_t - h).detach().cpu().item()),
         "lambda_value": sanitize_float(lam.detach().cpu().item()),
         "Q_value": sanitize_float(q_min.detach().cpu().item()),
         "Qc_value": sanitize_float(qc_risk_t.detach().cpu().item()),  # risk-form Qc used in ALGD actor objective
@@ -717,7 +733,7 @@ def analyze_region(
 
     for i, s in enumerate(states):
         try:
-            metrics = state_curvature_metrics(agent, s, threshold=threshold)
+            metrics = state_curvature_metrics(agent, s, threshold=threshold, region_name=region_name)
         except RuntimeError as e:
             # Basic numeric protection: record NaNs for problematic state
             print(f"[WARN] region={region_name} state_idx={i} curvature computation failed: {e}")
@@ -725,6 +741,7 @@ def analyze_region(
                 "qc_risk": float("nan"),
                 "threshold": threshold,
                 "boundary_gap": float("nan"),
+                "abs_qc_minus_h": float("nan"),
                 "lambda_value": float("nan"),
                 "Q_value": float("nan"),
                 "Qc_value": float("nan"),
@@ -767,6 +784,7 @@ def write_per_state_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         "qc_risk",
         "threshold",
         "boundary_gap",
+        "abs_qc_minus_h",
         "lambda_value",
         "Q_value",
         "Qc_value",
@@ -791,6 +809,7 @@ def build_summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     numeric_cols = [
         "qc_risk",
         "boundary_gap",
+        "abs_qc_minus_h",
         "lambda_value",
         "Q_value",
         "Qc_value",
