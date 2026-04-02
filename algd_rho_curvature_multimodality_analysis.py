@@ -39,15 +39,15 @@ from env.constraints import get_threshold
 # =============================================================================
 
 ENV_NAME = "Safexp-PointButton2-v0"
-RESULTS_FOLDER = "results/Safexp-PointButton2-v0/pointbutton2_algd/2025-12-06_15-07_seed3240"
-SEED = 3240
-RHO = 1.0
+RESULTS_FOLDER = "results/Safexp-PointButton1-v0/pointbutton1_algd_ablationRHO4.0/2025-12-31_12-21_seed1260"
+SEED = 1260
+RHO = 4.0
 
 NUM_NEAR_STATES = 50
 NUM_AWAY_STATES = 50
 MAX_ENV_STEPS = 250000
 BOUNDARY_MARGIN = 0.05
-AWAY_MARGIN = 0.20
+AWAY_MARGIN = 0.05
 
 ACTIONS_PER_STATE = 128
 KMEANS_ITERS = 20
@@ -83,7 +83,7 @@ GUIDANCE_NORMALIZE = True
 #   - "target_cost": use agent.target_cost (discounted/epoch-normalized budget used in some trainers)
 H_SOURCE = "cost_lim"
 # If not None, force this lambda for split + curvature (useful when lambda is not checkpointed).
-DUAL_LAMBDA_OVERRIDE = None  # e.g. 0.05
+DUAL_LAMBDA_OVERRIDE = 0.05  # e.g. 0.05
 
 # output folder/name prefix (saved inside {REPO_ROOT}/temp_results)
 OUTPUT_DIRNAME = "temp_results"
