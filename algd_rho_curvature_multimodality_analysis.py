@@ -77,9 +77,10 @@ USE_AUG_LAG = True
 GUIDANCE_SCALE = 0.05
 GUIDANCE_NORMALIZE = True
 
-# output file names (saved inside RESULTS_FOLDER)
-PER_STATE_CSV_NAME = "algd_rho_curvature_multimodality_per_state.csv"
-SUMMARY_CSV_NAME = "algd_rho_curvature_multimodality_summary.csv"
+# output folder/name prefix (saved inside {REPO_ROOT}/temp_results)
+OUTPUT_DIRNAME = "temp_results"
+PER_STATE_CSV_PREFIX = "algd_rho_curvature_multimodality_per_state"
+SUMMARY_CSV_PREFIX = "algd_rho_curvature_multimodality_summary"
 
 
 # =============================================================================
@@ -578,6 +579,8 @@ def collect_near_and_away_states(
     env,
     agent,
     threshold: float,
+    lambda_value: float,
+    rho_value: float,
     num_near: int,
     num_away: int,
     max_env_steps: int,
@@ -593,11 +596,18 @@ def collect_near_and_away_states(
 
     while steps < max_env_steps and (len(near_states) < num_near or len(away_states) < num_away):
         action = select_rollout_action(agent, obs)
-        risk = qc_risk(agent, obs, action)
+        qc_used = qc_risk(agent, obs, action)
+        gap = qc_used - threshold
+        active_val = lambda_value + rho_value * gap
+        inactive_interior_rhs = threshold - (lambda_value / rho_value) - away_margin
 
-        if abs(risk - threshold) <= boundary_margin and len(near_states) < num_near:
+        # near region uses ACTIVE boundary condition:
+        #   abs(Qc_used - h) <= BOUNDARY_MARGIN  and  lambda + rho*(Qc_used - h) > 0
+        if abs(gap) <= boundary_margin and active_val > 0.0 and len(near_states) < num_near:
             near_states.append(np.array(obs, dtype=np.float32, copy=True))
-        if risk <= threshold - away_margin and len(away_states) < num_away:
+        # away region uses INACTIVE interior condition:
+        #   Qc_used <= h - lambda/rho - AWAY_MARGIN
+        if qc_used <= inactive_interior_rhs and len(away_states) < num_away:
             away_states.append(np.array(obs, dtype=np.float32, copy=True))
 
         next_obs, _, done, _ = step_env(env, action)
@@ -823,6 +833,7 @@ def write_summary_csv(path: Path, summary_rows: List[Dict[str, Any]]) -> None:
 def main() -> None:
     env_id = canonical_env_name(ENV_NAME)
     set_seed(SEED)
+    repo_root = Path(__file__).resolve().parent
 
     env = gym.make(env_id)
     reset_env(env, seed=SEED)
@@ -844,13 +855,31 @@ def main() -> None:
     print(f"checkpoint critic: {critic_path}")
     print(f"checkpoint safety: {safety_path}")
 
-    threshold = float(getattr(agent, "target_cost", getattr(agent.args, "cost_lim", get_threshold(env_id, constraint="safetygym"))))
-    print(f"threshold (h)    : {threshold:.6f}")
+    raw_threshold = float(get_threshold(env_id, constraint="safetygym"))
+    args_cost_lim = float(getattr(agent.args, "cost_lim", raw_threshold))
+    dual_lambda = float(get_dual_lambda(agent).detach().cpu().item())
+    rho_value = float(getattr(agent, "rho", RHO))
+    if abs(rho_value) < 1e-12:
+        raise ValueError("rho is zero (or too close to zero), cannot evaluate inactive-interior split h - lambda/rho.")
+    threshold = float(getattr(agent, "target_cost", args_cost_lim))
+
+    print(f"raw get_threshold : {raw_threshold:.6f}")
+    print(f"agent.args.cost_lim: {args_cost_lim:.6f}")
+    print(f"dual lambda       : {dual_lambda:.6f}")
+    print(f"rho               : {rho_value:.6f}")
+    print(f"final threshold h : {threshold:.6f}")
+    print(
+        "state split rules -> "
+        "near: abs(Qc_used - h) <= BOUNDARY_MARGIN and lambda + rho*(Qc_used - h) > 0 ; "
+        "away: Qc_used <= h - lambda/rho - AWAY_MARGIN"
+    )
 
     near_states, away_states, used_steps = collect_near_and_away_states(
         env=env,
         agent=agent,
         threshold=threshold,
+        lambda_value=dual_lambda,
+        rho_value=rho_value,
         num_near=NUM_NEAR_STATES,
         num_away=NUM_AWAY_STATES,
         max_env_steps=MAX_ENV_STEPS,
@@ -867,21 +896,25 @@ def main() -> None:
     if len(away_states) < NUM_AWAY_STATES:
         print(
             f"[WARN] away-boundary states insufficient: collected={len(away_states)} < target={NUM_AWAY_STATES}. "
-            f"Try increasing MAX_ENV_STEPS or reducing AWAY_MARGIN."
+            f"Try increasing MAX_ENV_STEPS or reducing AWAY_MARGIN (or check lambda/rho split)."
         )
 
     print(
         f"Collected states in {used_steps} env steps: near={len(near_states)}, away={len(away_states)}"
     )
+    print(f"near states collected: {len(near_states)}")
+    print(f"away states collected: {len(away_states)}")
 
     near_rows = analyze_region("near", near_states, agent, threshold)
     away_rows = analyze_region("away", away_states, agent, threshold)
     all_rows = near_rows + away_rows
 
-    out_dir = Path(RESULTS_FOLDER)
+    env_tag = env_id.replace("-", "_").replace("/", "_")
+    rho_tag = str(RHO).replace(".", "p")
+    out_dir = repo_root / OUTPUT_DIRNAME
     out_dir.mkdir(parents=True, exist_ok=True)
-    per_state_csv_path = out_dir / PER_STATE_CSV_NAME
-    summary_csv_path = out_dir / SUMMARY_CSV_NAME
+    per_state_csv_path = out_dir / f"{PER_STATE_CSV_PREFIX}_{env_tag}_rho{rho_tag}_seed{SEED}.csv"
+    summary_csv_path = out_dir / f"{SUMMARY_CSV_PREFIX}_{env_tag}_rho{rho_tag}_seed{SEED}.csv"
 
     write_per_state_csv(per_state_csv_path, all_rows)
     summary_rows = build_summary_rows(all_rows)
@@ -895,6 +928,7 @@ def main() -> None:
             f"region={rec['region']:<4} | n={rec['num_states']:>3} | multimodality_rate={100.0 * rec['multimodality_rate']:.2f}% "
             f"| lambda_min_hess_L_mean={rec['lambda_min_hess_L_mean']:.6f} "
             f"| lambda_min_hess_LA_mean={rec['lambda_min_hess_LA_mean']:.6f} "
+            f"| rho_grad_Qc_norm_sq_mean={rec['rho_grad_Qc_norm_sq_mean']:.6f} "
             f"| dom_ratio_mean={rec['dom_ratio_mean']:.6f}"
         )
 
