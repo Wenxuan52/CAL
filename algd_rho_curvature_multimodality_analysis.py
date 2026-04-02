@@ -77,6 +77,14 @@ USE_AUG_LAG = True
 GUIDANCE_SCALE = 0.05
 GUIDANCE_NORMALIZE = True
 
+# split/analysis controls
+# H_SOURCE:
+#   - "cost_lim": use agent.args.cost_lim (usually raw task threshold, e.g. 10.0)
+#   - "target_cost": use agent.target_cost (discounted/epoch-normalized budget used in some trainers)
+H_SOURCE = "cost_lim"
+# If not None, force this lambda for split + curvature (useful when lambda is not checkpointed).
+DUAL_LAMBDA_OVERRIDE = None  # e.g. 0.05
+
 # output folder/name prefix (saved inside {REPO_ROOT}/temp_results)
 OUTPUT_DIRNAME = "temp_results"
 PER_STATE_CSV_PREFIX = "algd_rho_curvature_multimodality_per_state"
@@ -562,6 +570,27 @@ def scalar_hessian_wrt_action(scalar: torch.Tensor, action: torch.Tensor) -> tor
     return H
 
 
+def choose_final_threshold_h(agent, env_id: str) -> Tuple[float, float, float]:
+    raw_threshold = float(get_threshold(env_id, constraint="safetygym"))
+    args_cost_lim = float(getattr(agent.args, "cost_lim", raw_threshold))
+    target_cost = float(getattr(agent, "target_cost", args_cost_lim))
+
+    h_source = str(H_SOURCE).strip().lower()
+    if h_source == "cost_lim":
+        h = args_cost_lim
+    elif h_source == "target_cost":
+        h = target_cost
+    else:
+        raise ValueError(f"Unsupported H_SOURCE={H_SOURCE}. Use 'cost_lim' or 'target_cost'.")
+    return raw_threshold, args_cost_lim, h
+
+
+def choose_dual_lambda_value(agent) -> float:
+    if DUAL_LAMBDA_OVERRIDE is not None:
+        return float(DUAL_LAMBDA_OVERRIDE)
+    return float(get_dual_lambda(agent).detach().cpu().item())
+
+
 def build_loaded_agent(env, env_id: str, seed: int, results_folder: str):
     _, _, safety_path = find_checkpoint_triplet(results_folder)
     inferred_qc_ens_size = infer_qc_ensemble_size_from_checkpoint(safety_path)
@@ -855,17 +884,21 @@ def main() -> None:
     print(f"checkpoint critic: {critic_path}")
     print(f"checkpoint safety: {safety_path}")
 
-    raw_threshold = float(get_threshold(env_id, constraint="safetygym"))
-    args_cost_lim = float(getattr(agent.args, "cost_lim", raw_threshold))
-    dual_lambda = float(get_dual_lambda(agent).detach().cpu().item())
+    raw_threshold, args_cost_lim, threshold = choose_final_threshold_h(agent, env_id)
+    dual_lambda = choose_dual_lambda_value(agent)
     rho_value = float(getattr(agent, "rho", RHO))
     if abs(rho_value) < 1e-12:
         raise ValueError("rho is zero (or too close to zero), cannot evaluate inactive-interior split h - lambda/rho.")
-    threshold = float(getattr(agent, "target_cost", args_cost_lim))
 
     print(f"raw get_threshold : {raw_threshold:.6f}")
     print(f"agent.args.cost_lim: {args_cost_lim:.6f}")
+    print(f"H_SOURCE          : {H_SOURCE}")
     print(f"dual lambda       : {dual_lambda:.6f}")
+    if DUAL_LAMBDA_OVERRIDE is not None:
+        print("[INFO] dual lambda uses DUAL_LAMBDA_OVERRIDE from config.")
+    elif abs(dual_lambda - 0.6931) < 1e-5:
+        print("[WARN] dual lambda is near default init (0.6931). "
+              "If your lambda is not checkpointed, set DUAL_LAMBDA_OVERRIDE manually.")
     print(f"rho               : {rho_value:.6f}")
     print(f"final threshold h : {threshold:.6f}")
     print(
