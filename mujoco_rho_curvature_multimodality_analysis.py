@@ -28,8 +28,6 @@ from typing import Any, Dict, List, Sequence, Tuple
 import gym
 import numpy as np
 import torch
-import safety_gym  # noqa: F401, required for Safety-Gym env registration
-
 from agents.algd.algd_v5 import ALGDAgent
 from env.constraints import get_threshold
 
@@ -38,10 +36,11 @@ from env.constraints import get_threshold
 # USER CONFIG (EDIT HERE)
 # =============================================================================
 
-ENV_NAME = "Safexp-PointButton1-v0"
-RESULTS_FOLDER = "results/Safexp-PointButton1-v0/pointbutton1_algd_ablationRHO0.5/2025-12-31_11-28_seed8477"
-SEED = 8477
+ENV_NAME = "Hopper-v3"
+RESULTS_FOLDER = "results/Hopper-v3/hopper_algd/2026-01-01_00-00_seed1234"
+SEED = 1234
 RHO = 0.5
+CONSTRAINT_TYPE = "velocity"  # MuJoCo tasks in this repo use velocity constraint.
 
 NUM_NEAR_STATES = 50
 NUM_AWAY_STATES = 50
@@ -78,8 +77,8 @@ GUIDANCE_NORMALIZE = True
 
 # output folder/name prefix (saved inside {REPO_ROOT}/temp_results)
 OUTPUT_DIRNAME = "temp_results_"
-PER_STATE_CSV_PREFIX = "algd_rho_curvature_multimodality_per_state"
-SUMMARY_CSV_PREFIX = "algd_rho_curvature_multimodality_summary"
+PER_STATE_CSV_PREFIX = "mujoco_rho_curvature_multimodality_per_state"
+SUMMARY_CSV_PREFIX = "mujoco_rho_curvature_multimodality_summary"
 
 
 # =============================================================================
@@ -87,12 +86,14 @@ SUMMARY_CSV_PREFIX = "algd_rho_curvature_multimodality_summary"
 # =============================================================================
 
 ENV_ALIASES = {
-    "pointbutton2": "Safexp-PointButton2-v0",
-    "carbutton2": "Safexp-CarButton2-v0",
-    "pointpush1": "Safexp-PointPush1-v0",
-    "safexp-pointbutton2-v0": "Safexp-PointButton2-v0",
-    "safexp-carbutton2-v0": "Safexp-CarButton2-v0",
-    "safexp-pointpush1-v0": "Safexp-PointPush1-v0",
+    "hopper": "Hopper-v3",
+    "hopper-v3": "Hopper-v3",
+    "halfcheetah": "HalfCheetah-v3",
+    "halfcheetah-v3": "HalfCheetah-v3",
+    "ant": "Ant-v3",
+    "ant-v3": "Ant-v3",
+    "humanoid": "Humanoid-v3",
+    "humanoid-v3": "Humanoid-v3",
 }
 
 
@@ -100,7 +101,7 @@ def canonical_env_name(env_arg: str) -> str:
     key = env_arg.strip().lower()
     if key in ENV_ALIASES:
         return ENV_ALIASES[key]
-    if env_arg.startswith("Safexp-") and env_arg.endswith("-v0"):
+    if env_arg in {"Hopper-v3", "HalfCheetah-v3", "Ant-v3", "Humanoid-v3"}:
         return env_arg
     raise ValueError(f"Unsupported env name: {env_arg}")
 
@@ -172,9 +173,10 @@ def get_device(agent) -> torch.device:
 
 def make_agent_args(env_id: str, seed: int, qc_ens_size: int) -> SimpleNamespace:
     merged = dict(
-        safetygym=True,
-        epoch_length=400,
-        cost_lim=get_threshold(env_id, constraint="safetygym"),
+        safetygym=False,
+        constraint_type=CONSTRAINT_TYPE,
+        epoch_length=1000,
+        cost_lim=get_threshold(env_id, constraint=CONSTRAINT_TYPE),
         env_name=env_id,
         seed=seed,
         hidden_size=HIDDEN_SIZE,
@@ -836,7 +838,7 @@ def main() -> None:
     reset_env(env, seed=SEED)
 
     print("=" * 90)
-    print("ALGD rho curvature + multimodality post-hoc analysis")
+    print("MuJoCo ALGD rho curvature + multimodality post-hoc analysis")
     print("=" * 90)
     print(f"env_id         : {env_id}")
     print(f"results_folder : {RESULTS_FOLDER}")
@@ -852,7 +854,7 @@ def main() -> None:
     print(f"checkpoint critic: {critic_path}")
     print(f"checkpoint safety: {safety_path}")
 
-    raw_threshold = float(get_threshold(env_id, constraint="safetygym"))
+    raw_threshold = float(get_threshold(env_id, constraint=CONSTRAINT_TYPE))
     args_cost_lim = float(getattr(agent.args, "cost_lim", raw_threshold))
     dual_lambda = float(get_dual_lambda(agent).detach().cpu().item())
     rho_value = float(getattr(agent, "rho", RHO))
