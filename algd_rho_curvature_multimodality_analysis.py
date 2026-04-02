@@ -47,7 +47,6 @@ NUM_NEAR_STATES = 50
 NUM_AWAY_STATES = 50
 MAX_ENV_STEPS = 250000
 BOUNDARY_MARGIN = 0.05
-AWAY_MARGIN = 0.20
 
 ACTIONS_PER_STATE = 128
 KMEANS_ITERS = 20
@@ -585,7 +584,6 @@ def collect_near_and_away_states(
     num_away: int,
     max_env_steps: int,
     boundary_margin: float,
-    away_margin: float,
     seed: int,
 ) -> Tuple[List[np.ndarray], List[np.ndarray], int]:
     near_states: List[np.ndarray] = []
@@ -599,15 +597,14 @@ def collect_near_and_away_states(
         qc_used = qc_risk(agent, obs, action)
         gap = qc_used - threshold
         active_val = lambda_value + rho_value * gap
-        inactive_interior_rhs = threshold - (lambda_value / rho_value) - away_margin
-
         # near region uses ACTIVE boundary condition:
         #   abs(Qc_used - h) <= BOUNDARY_MARGIN  and  lambda + rho*(Qc_used - h) > 0
-        if abs(gap) <= boundary_margin and active_val > 0.0 and len(near_states) < num_near:
+        is_near = abs(gap) <= boundary_margin and active_val > 0.0
+        if is_near and len(near_states) < num_near:
             near_states.append(np.array(obs, dtype=np.float32, copy=True))
-        # away region uses INACTIVE interior condition:
-        #   Qc_used <= h - lambda/rho - AWAY_MARGIN
-        if qc_used <= inactive_interior_rhs and len(away_states) < num_away:
+        # away region uses complement of near condition:
+        #   NOT( abs(Qc_used - h) <= BOUNDARY_MARGIN and lambda + rho*(Qc_used - h) > 0 )
+        if (not is_near) and len(away_states) < num_away:
             away_states.append(np.array(obs, dtype=np.float32, copy=True))
 
         next_obs, _, done, _ = step_env(env, action)
@@ -859,8 +856,6 @@ def main() -> None:
     args_cost_lim = float(getattr(agent.args, "cost_lim", raw_threshold))
     dual_lambda = float(get_dual_lambda(agent).detach().cpu().item())
     rho_value = float(getattr(agent, "rho", RHO))
-    if abs(rho_value) < 1e-12:
-        raise ValueError("rho is zero (or too close to zero), cannot evaluate inactive-interior split h - lambda/rho.")
     threshold = float(getattr(agent, "target_cost", args_cost_lim))
 
     print(f"raw get_threshold : {raw_threshold:.6f}")
@@ -871,7 +866,7 @@ def main() -> None:
     print(
         "state split rules -> "
         "near: abs(Qc_used - h) <= BOUNDARY_MARGIN and lambda + rho*(Qc_used - h) > 0 ; "
-        "away: Qc_used <= h - lambda/rho - AWAY_MARGIN"
+        "away: NOT(near)"
     )
 
     near_states, away_states, used_steps = collect_near_and_away_states(
@@ -884,7 +879,6 @@ def main() -> None:
         num_away=NUM_AWAY_STATES,
         max_env_steps=MAX_ENV_STEPS,
         boundary_margin=BOUNDARY_MARGIN,
-        away_margin=AWAY_MARGIN,
         seed=SEED,
     )
 
@@ -896,7 +890,7 @@ def main() -> None:
     if len(away_states) < NUM_AWAY_STATES:
         print(
             f"[WARN] away-boundary states insufficient: collected={len(away_states)} < target={NUM_AWAY_STATES}. "
-            f"Try increasing MAX_ENV_STEPS or reducing AWAY_MARGIN (or check lambda/rho split)."
+            f"Try increasing MAX_ENV_STEPS."
         )
 
     print(
